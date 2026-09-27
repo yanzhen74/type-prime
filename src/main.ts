@@ -25,7 +25,7 @@ class App {
 
   constructor() {
     this.storage = new UserStorage();
-    this.keyboard = new KeyboardRenderer('keyboard-container', 'finger-hint');
+    this.keyboard = new KeyboardRenderer('keyboard-container', 'finger-hint', 'hands-diagram');
     this.game = new FallingWordGame(
       'game-canvas',
       (state) => this.onGameUpdate(state),

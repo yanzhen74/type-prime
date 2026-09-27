@@ -219,3 +219,135 @@ td {
 th {
   color: var(--accent);
 }
+
+/* 左右手分隔线 */
+.hand-divider {
+  width: 2px;
+  height: 34px;
+  margin: 5px 4px;
+  background: linear-gradient(to bottom, transparent, var(--warn), transparent);
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+/* 手指示意图 */
+#hands-diagram {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.hands-wrapper {
+  display: flex;
+  justify-content: center;
+  gap: 48px;
+  flex-wrap: wrap;
+}
+
+.hand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.hand-label {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.fingers {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 70px;
+  padding: 0 8px;
+}
+
+.finger {
+  width: 18px;
+  border-radius: 10px 10px 4px 4px;
+  background: #334155;
+  border: 2px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.finger.pinky {
+  height: 30px;
+  border-color: #f472b6;
+}
+
+.finger.ring {
+  height: 42px;
+  border-color: #a78bfa;
+}
+
+.finger.middle {
+  height: 52px;
+  border-color: #60a5fa;
+}
+
+.finger.index {
+  height: 46px;
+  border-color: #34d399;
+}
+
+.finger.thumb {
+  height: 26px;
+  border-color: #fbbf24;
+}
+
+.finger.active {
+  background: var(--accent);
+  transform: scale(1.15);
+  box-shadow: 0 0 14px var(--accent);
+}
+
+.finger-legend {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.legend-dot.pinky {
+  border-color: #f472b6;
+  background: #f472b6;
+}
+
+.legend-dot.ring {
+  border-color: #a78bfa;
+  background: #a78bfa;
+}
+
+.legend-dot.middle {
+  border-color: #60a5fa;
+  background: #60a5fa;
+}
+
+.legend-dot.index {
+  border-color: #34d399;
+  background: #34d399;
+}
+
+.legend-dot.thumb {
+  border-color: #fbbf24;
+  background: #fbbf24;
+}

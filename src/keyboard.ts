@@ -66,6 +66,8 @@ const ROWS: KeyInfo[][] = [
   [{ label: 'Space', code: 'Space', finger: 'thumb', width: 280 }],
 ];
 
+const HAND_SPLIT_INDEX = 5;
+
 const CODE_MAP = new Map<string, KeyInfo>();
 for (const row of ROWS) {
   for (const key of row) {
@@ -77,23 +79,36 @@ export class KeyboardRenderer {
   private container: HTMLElement;
   private keyElements = new Map<string, HTMLElement>();
   private hintEl: HTMLElement;
+  private handsEl: HTMLElement;
+  private fingerElements = new Map<Finger, HTMLElement>();
 
-  constructor(containerId: string, hintId: string) {
+  constructor(containerId: string, hintId: string, handsId: string) {
     const container = document.getElementById(containerId);
     const hint = document.getElementById(hintId);
-    if (!container || !hint) {
-      throw new Error('Keyboard container or hint element not found');
+    const hands = document.getElementById(handsId);
+    if (!container || !hint || !hands) {
+      throw new Error('Keyboard container, hint or hands element not found');
     }
     this.container = container;
     this.hintEl = hint;
-    this.render();
+    this.handsEl = hands;
+    this.renderKeyboard();
+    this.renderHands();
   }
 
-  private render(): void {
+  private renderKeyboard(): void {
     for (const row of ROWS) {
       const rowEl = document.createElement('div');
       rowEl.className = 'keyboard-row';
-      for (const key of row) {
+      for (let i = 0; i < row.length; i++) {
+        if (i === HAND_SPLIT_INDEX && row.length > HAND_SPLIT_INDEX) {
+          const divider = document.createElement('div');
+          divider.className = 'hand-divider';
+          divider.setAttribute('aria-hidden', 'true');
+          rowEl.appendChild(divider);
+        }
+
+        const key = row[i];
         const keyEl = document.createElement('div');
         keyEl.className = `key ${key.finger}`;
         keyEl.textContent = key.label;
@@ -109,6 +124,64 @@ export class KeyboardRenderer {
     }
   }
 
+  private renderHands(): void {
+    this.handsEl.innerHTML = '';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'hands-wrapper';
+
+    wrapper.appendChild(this.createHand('左手', ['pinky', 'ring', 'middle', 'index', 'thumb']));
+    wrapper.appendChild(this.createHand('右手', ['thumb', 'index', 'middle', 'ring', 'pinky']));
+
+    this.handsEl.appendChild(wrapper);
+    this.handsEl.appendChild(this.createLegend());
+  }
+
+  private createHand(label: string, fingers: Finger[]): HTMLElement {
+    const hand = document.createElement('div');
+    hand.className = 'hand';
+
+    const title = document.createElement('div');
+    title.className = 'hand-label';
+    title.textContent = label;
+    hand.appendChild(title);
+
+    const fingersEl = document.createElement('div');
+    fingersEl.className = 'fingers';
+    for (const finger of fingers) {
+      const fingerEl = document.createElement('div');
+      fingerEl.className = `finger ${finger}`;
+      fingerEl.dataset.finger = finger;
+      fingerEl.title = this.fingerName(finger);
+      this.fingerElements.set(finger, fingerEl);
+      fingersEl.appendChild(fingerEl);
+    }
+    hand.appendChild(fingersEl);
+
+    return hand;
+  }
+
+  private createLegend(): HTMLElement {
+    const legend = document.createElement('div');
+    legend.className = 'finger-legend';
+    const items: [Finger, string][] = [
+      ['pinky', '小指'],
+      ['ring', '无名指'],
+      ['middle', '中指'],
+      ['index', '食指'],
+      ['thumb', '拇指'],
+    ];
+    for (const [finger, name] of items) {
+      const item = document.createElement('div');
+      item.className = 'legend-item';
+      const dot = document.createElement('span');
+      dot.className = `legend-dot ${finger}`;
+      item.appendChild(dot);
+      item.appendChild(document.createTextNode(name));
+      legend.appendChild(item);
+    }
+    return legend;
+  }
+
   highlight(code: string): void {
     const key = CODE_MAP.get(code);
     const el = this.keyElements.get(code);
@@ -121,13 +194,20 @@ export class KeyboardRenderer {
     el.classList.add('active');
     this.hintEl.textContent = `${key.label} → 使用 ${this.fingerName(key.finger)}`;
 
+    const fingerEl = this.fingerElements.get(key.finger);
+    fingerEl?.classList.add('active');
+
     window.setTimeout(() => {
       el.classList.remove('active');
+      fingerEl?.classList.remove('active');
     }, 200);
   }
 
   clear(): void {
     for (const el of this.keyElements.values()) {
+      el.classList.remove('active');
+    }
+    for (const el of this.fingerElements.values()) {
       el.classList.remove('active');
     }
   }
