@@ -1,11 +1,31 @@
-import type { Word, GameState } from './types.js';
+import type { GameState } from './types.js';
 
 const VOCABULARY = [
-  'apple', 'banana', 'grape', 'lemon', 'peach',
-  'tiger', 'rabbit', 'eagle', 'dolphin', 'penguin',
-  'happy', 'bright', 'strong', 'gentle', 'clever',
-  'planet', 'rocket', 'galaxy', 'comet', 'nebula',
-  'function', 'variable', 'array', 'object', 'return',
+  'apple',
+  'banana',
+  'grape',
+  'lemon',
+  'peach',
+  'tiger',
+  'rabbit',
+  'eagle',
+  'dolphin',
+  'penguin',
+  'happy',
+  'bright',
+  'strong',
+  'gentle',
+  'clever',
+  'planet',
+  'rocket',
+  'galaxy',
+  'comet',
+  'nebula',
+  'function',
+  'variable',
+  'array',
+  'object',
+  'return',
 ];
 
 export class FallingWordGame {
@@ -14,6 +34,7 @@ export class FallingWordGame {
   private state: GameState;
   private animationId = 0;
   private lastSpawn = 0;
+  private countdownTimer = 0;
   private onUpdate: (state: GameState) => void;
   private onGameOver: (score: number) => void;
 
@@ -47,6 +68,8 @@ export class FallingWordGame {
       words: [],
       currentInput: '',
       lockedWordIndex: null,
+      mistakes: 0,
+      countdown: 3,
     };
   }
 
@@ -54,9 +77,23 @@ export class FallingWordGame {
     if (this.state.isRunning) return;
     this.state = this.createInitialState();
     this.state.isRunning = true;
-    this.lastSpawn = performance.now();
-    this.loop(performance.now());
+    this.state.countdown = 3;
+    this.runCountdown();
     this.onUpdate(this.state);
+  }
+
+  private runCountdown(): void {
+    if (this.state.countdown > 0) {
+      this.draw();
+      this.countdownTimer = window.setTimeout(() => {
+        this.state.countdown -= 1;
+        this.onUpdate(this.state);
+        this.runCountdown();
+      }, 1000);
+    } else {
+      this.lastSpawn = performance.now();
+      this.loop(performance.now());
+    }
   }
 
   pause(): void {
@@ -64,6 +101,9 @@ export class FallingWordGame {
     if (!this.state.isPaused) {
       this.lastSpawn = performance.now();
       this.loop(performance.now());
+    } else {
+      cancelAnimationFrame(this.animationId);
+      this.draw();
     }
     this.onUpdate(this.state);
   }
@@ -71,20 +111,23 @@ export class FallingWordGame {
   reset(): void {
     this.state.isRunning = false;
     cancelAnimationFrame(this.animationId);
+    window.clearTimeout(this.countdownTimer);
     this.state = this.createInitialState();
     this.draw();
     this.onUpdate(this.state);
   }
 
   handleInput(char: string): void {
-    if (!this.state.isRunning || this.state.isPaused) return;
+    if (!this.state.isRunning || this.state.isPaused || this.state.countdown > 0) return;
 
-    // 自动锁定：优先匹配当前输入开头的单词；若无则匹配最近的未锁定单词
+    // 自动锁定：优先匹配位置最低（最紧急）且以当前字符开头的单词
     if (this.state.lockedWordIndex === null) {
       const matchIndex = this.findMatchingWord(char);
       if (matchIndex !== null) {
         this.state.lockedWordIndex = matchIndex;
       } else {
+        this.state.mistakes += 1;
+        this.onUpdate(this.state);
         return;
       }
     }
@@ -99,26 +142,46 @@ export class FallingWordGame {
 
       if (word.typedIndex >= word.text.length) {
         this.destroyWord(this.state.lockedWordIndex);
+      } else {
+        this.onUpdate(this.state);
       }
+    } else {
+      this.state.mistakes += 1;
+      this.onUpdate(this.state);
     }
   }
 
+  handleBackspace(): void {
+    if (!this.state.isRunning || this.state.isPaused || this.state.countdown > 0) return;
+    if (this.state.lockedWordIndex === null) return;
+
+    const word = this.state.words[this.state.lockedWordIndex];
+    if (!word || word.typedIndex === 0) return;
+
+    word.typedIndex -= 1;
+    this.state.currentInput = this.state.currentInput.slice(0, -1);
+    this.onUpdate(this.state);
+  }
+
   submitWord(): void {
-    if (!this.state.isRunning || this.state.isPaused) return;
+    if (!this.state.isRunning || this.state.isPaused || this.state.countdown > 0) return;
     // 当前设计为逐字符输入即销毁，submit 用于清理输入框显示
     this.state.currentInput = '';
     this.onUpdate(this.state);
   }
 
   private findMatchingWord(char: string): number | null {
-    // 优先找以该字符开头的单词
+    // 优先匹配位置最低（最靠近底部、最紧急）且以该字符开头的单词
+    let bestIndex: number | null = null;
+    let bestY = -Infinity;
     for (let i = 0; i < this.state.words.length; i++) {
       const word = this.state.words[i];
-      if (word.text[0].toLowerCase() === char) {
-        return i;
+      if (word.text[word.typedIndex].toLowerCase() === char && word.y > bestY) {
+        bestY = word.y;
+        bestIndex = i;
       }
     }
-    return null;
+    return bestIndex;
   }
 
   private destroyWord(index: number): void {
@@ -151,7 +214,7 @@ export class FallingWordGame {
   }
 
   private loop(now: number): void {
-    if (!this.state.isRunning || this.state.isPaused) return;
+    if (!this.state.isRunning || this.state.isPaused || this.state.countdown > 0) return;
 
     const spawnInterval = Math.max(1200, 2500 - this.state.level * 200);
     if (now - this.lastSpawn > spawnInterval) {
@@ -260,6 +323,29 @@ export class FallingWordGame {
         ctx.lineWidth = 2;
         ctx.strokeRect(word.x - fullWidth / 2 - 8, word.y - 18, fullWidth + 16, 36);
       }
+    }
+
+    // 倒计时
+    if (this.state.isRunning && this.state.countdown > 0) {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 80px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(this.state.countdown), width / 2, height / 2);
+    }
+
+    // 暂停遮罩
+    if (this.state.isPaused) {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = '#fbbf24';
+      ctx.font = 'bold 48px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('PAUSED', width / 2, height / 2);
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = '20px sans-serif';
+      ctx.fillText('按 Esc 或点击暂停按钮继续', width / 2, height / 2 + 40);
     }
 
     if (!this.state.isRunning && this.state.lives <= 0) {

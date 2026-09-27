@@ -2,14 +2,35 @@
   "name": "type-prime",
   "version": "0.1.0",
   "description": "A browser-based typing game prototype with touch typing training and falling word gameplay.",
+  "type": "module",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "serve": "npx serve ."
+    "serve": "npx serve .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"src/**/*.{ts,js,json,md}\" \"*.{html,ts,js,json,md,css,mjs}\" \"vitest.config.ts\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,json,md}\" \"*.{html,ts,js,json,md,css,mjs}\" \"vitest.config.ts\""
   },
   "devDependencies": {
-    "typescript": "^5.4.0"
+    "@eslint/js": "^10.0.1",
+    "@vitest/ui": "^5.0.2",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.9.9",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^5.0.2"
   },
-  "keywords": ["typing", "game", "vocabulary", "touch-typing"],
+  "keywords": [
+    "typing",
+    "game",
+    "vocabulary",
+    "touch-typing"
+  ],
   "license": "MIT"
 }

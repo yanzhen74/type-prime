@@ -22,6 +22,8 @@ export interface GameState {
   words: Word[];
   currentInput: string;
   lockedWordIndex: number | null;
+  mistakes: number;
+  countdown: number;
 }
 
 export type Finger = 'pinky' | 'ring' | 'middle' | 'index' | 'thumb' | 'unknown';

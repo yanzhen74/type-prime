@@ -16,6 +16,8 @@ class App {
   private scoreEl = document.getElementById('score') as HTMLElement;
   private livesEl = document.getElementById('lives') as HTMLElement;
   private levelEl = document.getElementById('level') as HTMLElement;
+  private mistakesEl = document.getElementById('mistakes') as HTMLElement;
+  private accuracyEl = document.getElementById('accuracy') as HTMLElement;
   private btnStart = document.getElementById('btn-start') as HTMLButtonElement;
   private btnPause = document.getElementById('btn-pause') as HTMLButtonElement;
   private btnReset = document.getElementById('btn-reset') as HTMLButtonElement;
@@ -79,12 +81,23 @@ class App {
 
   private initKeyboardInput(): void {
     window.addEventListener('keydown', (e) => {
-      // 指法训练面板高亮
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.game.pause();
+        return;
+      }
+
       this.keyboard.highlight(e.code);
 
-      // 游戏输入
       if (!this.isGamePanelActive()) return;
-      if (e.key.length === 1 && /[a-zA-Z0-9\-=_\[\]\\;',./` ]/.test(e.key)) {
+
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        this.game.handleBackspace();
+        return;
+      }
+
+      if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
         e.preventDefault();
         this.game.handleInput(e.key.toLowerCase());
       } else if (e.key === 'Enter' || e.key === ' ') {
@@ -102,6 +115,16 @@ class App {
     this.scoreEl.textContent = String(state.score);
     this.livesEl.textContent = String(state.lives);
     this.levelEl.textContent = String(state.level);
+    this.mistakesEl.textContent = String(state.mistakes);
+    this.accuracyEl.textContent = this.computeAccuracy(state);
+    this.btnPause.textContent = state.isPaused ? '继续' : '暂停';
+  }
+
+  private computeAccuracy(state: GameState): string {
+    const total = state.score / 10 + state.mistakes;
+    if (total === 0) return '100%';
+    const accuracy = (state.score / 10 / total) * 100;
+    return `${accuracy.toFixed(1)}%`;
   }
 
   private onGameOver(score: number): void {

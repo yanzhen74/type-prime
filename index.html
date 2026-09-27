@@ -1,70 +1,72 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>type-prime - 打字游戏原型</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <div id="app">
-    <header class="top-bar">
-      <h1>type-prime</h1>
-      <div class="user-section">
-        <label for="user-select">当前用户：</label>
-        <select id="user-select"></select>
-        <button id="btn-add-user">添加用户</button>
-      </div>
-    </header>
-
-    <nav class="tabs">
-      <button class="tab-btn active" data-tab="train">指法训练</button>
-      <button class="tab-btn" data-tab="game">单词掉落</button>
-      <button class="tab-btn" data-tab="rank">排行榜</button>
-    </nav>
-
-    <main>
-      <!-- 指法训练面板 -->
-      <section id="panel-train" class="panel active">
-        <h2>标准指法训练</h2>
-        <p>按下键盘任意键，屏幕会高亮对应键位与推荐手指。</p>
-        <div id="keyboard-container"></div>
-        <div id="finger-hint">请按任意键开始...</div>
-      </section>
-
-      <!-- 游戏面板 -->
-      <section id="panel-game" class="panel">
-        <div class="game-info">
-          <span>分数：<strong id="score">0</strong></span>
-          <span>生命：<strong id="lives">3</strong></span>
-          <span>等级：<strong id="level">1</strong></span>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>type-prime - 打字游戏原型</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="top-bar">
+        <h1>type-prime</h1>
+        <div class="user-section">
+          <label for="user-select">当前用户：</label>
+          <select id="user-select"></select>
+          <button id="btn-add-user">添加用户</button>
         </div>
-        <canvas id="game-canvas" width="800" height="500"></canvas>
-        <div class="game-controls">
-          <button id="btn-start">开始游戏</button>
-          <button id="btn-pause">暂停</button>
-          <button id="btn-reset">重置</button>
-        </div>
-        <p class="game-tip">输入单词后按空格或回车发射；开始输入会自动锁定最近的单词。</p>
-      </section>
+      </header>
 
-      <!-- 排行榜面板 -->
-      <section id="panel-rank" class="panel">
-        <h2>排行榜</h2>
-        <table id="rank-table">
-          <thead>
-            <tr>
-              <th>用户</th>
-              <th>最高分</th>
-              <th>总游戏次数</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </section>
-    </main>
-  </div>
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="train">指法训练</button>
+        <button class="tab-btn" data-tab="game">单词掉落</button>
+        <button class="tab-btn" data-tab="rank">排行榜</button>
+      </nav>
 
-  <script type="module" src="dist/main.js"></script>
-</body>
+      <main>
+        <!-- 指法训练面板 -->
+        <section id="panel-train" class="panel active">
+          <h2>标准指法训练</h2>
+          <p>按下键盘任意键，屏幕会高亮对应键位与推荐手指。</p>
+          <div id="keyboard-container"></div>
+          <div id="finger-hint">请按任意键开始...</div>
+        </section>
+
+        <!-- 游戏面板 -->
+        <section id="panel-game" class="panel">
+          <div class="game-info">
+            <span>分数：<strong id="score">0</strong></span>
+            <span>生命：<strong id="lives">3</strong></span>
+            <span>等级：<strong id="level">1</strong></span>
+            <span>失误：<strong id="mistakes">0</strong></span>
+            <span>准确率：<strong id="accuracy">100%</strong></span>
+          </div>
+          <canvas id="game-canvas" width="800" height="500"></canvas>
+          <div class="game-controls">
+            <button id="btn-start">开始游戏</button>
+            <button id="btn-pause">暂停</button>
+            <button id="btn-reset">重置</button>
+          </div>
+          <p class="game-tip">输入单词击落目标；按 Esc 暂停，Backspace 回退当前锁定单词。</p>
+        </section>
+
+        <!-- 排行榜面板 -->
+        <section id="panel-rank" class="panel">
+          <h2>排行榜</h2>
+          <table id="rank-table">
+            <thead>
+              <tr>
+                <th>用户</th>
+                <th>最高分</th>
+                <th>总游戏次数</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="dist/main.js"></script>
+  </body>
 </html>
