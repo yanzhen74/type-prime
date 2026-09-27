@@ -12,6 +12,7 @@ class App {
   private btnAddUser = document.getElementById('btn-add-user') as HTMLButtonElement;
   private tabButtons = document.querySelectorAll('.tab-btn');
   private panels = document.querySelectorAll('.panel');
+  private gameInput = document.getElementById('game-input') as HTMLInputElement;
 
   private scoreEl = document.getElementById('score') as HTMLElement;
   private livesEl = document.getElementById('lives') as HTMLElement;
@@ -52,6 +53,10 @@ class App {
         btn.classList.add('active');
         const panel = document.getElementById(`panel-${tab}`);
         panel?.classList.add('active');
+
+        if (tab === 'game') {
+          this.focusGameInput();
+        }
       });
     });
   }
@@ -74,9 +79,18 @@ class App {
   }
 
   private initGameControls(): void {
-    this.btnStart.addEventListener('click', () => this.game.start());
+    this.btnStart.addEventListener('click', () => {
+      this.game.start();
+      this.focusGameInput();
+    });
     this.btnPause.addEventListener('click', () => this.game.pause());
     this.btnReset.addEventListener('click', () => this.game.reset());
+  }
+
+  private focusGameInput(): void {
+    if (this.isGamePanelActive()) {
+      this.gameInput.focus();
+    }
   }
 
   private initKeyboardInput(): void {
@@ -84,6 +98,7 @@ class App {
       if (e.key === 'Escape') {
         e.preventDefault();
         this.game.pause();
+        this.focusGameInput();
         return;
       }
 
@@ -97,12 +112,34 @@ class App {
         return;
       }
 
-      if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
-        e.preventDefault();
-        this.game.handleInput(e.key.toLowerCase());
-      } else if (e.key === 'Enter' || e.key === ' ') {
+      if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         this.game.submitWord();
+      }
+    });
+
+    // 使用 input 事件捕获实际输入字符，兼容中文输入法等 IME 场景
+    this.gameInput.addEventListener('input', (e) => {
+      if (!this.isGamePanelActive()) return;
+
+      const inputEvent = e as InputEvent;
+      const data = inputEvent.data;
+      if (data) {
+        for (const char of data) {
+          if (char !== ' ') {
+            this.game.handleInput(char.toLowerCase());
+          }
+        }
+      }
+
+      // 清空输入框，避免累积字符影响下一次输入判断
+      this.gameInput.value = '';
+    });
+
+    // 防止输入框失去焦点后无法接收输入
+    this.gameInput.addEventListener('blur', () => {
+      if (this.isGamePanelActive()) {
+        window.setTimeout(() => this.focusGameInput(), 0);
       }
     });
   }
