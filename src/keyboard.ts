@@ -1,13 +1,18 @@
 import type { Finger } from './types.js';
 
+type Hand = 'left' | 'right';
+
 interface KeyInfo {
   label: string;
   code: string;
   finger: Finger;
+  hand: Hand;
   width?: number;
 }
 
-const ROWS: KeyInfo[][] = [
+type KeySeed = Omit<KeyInfo, 'hand'>;
+
+const ROW_SEEDS: KeySeed[][] = [
   [
     { label: '`', code: 'Backquote', finger: 'pinky' },
     { label: '1', code: 'Digit1', finger: 'pinky' },
@@ -66,7 +71,17 @@ const ROWS: KeyInfo[][] = [
   [{ label: 'Space', code: 'Space', finger: 'thumb', width: 280 }],
 ];
 
-const HAND_SPLIT_INDEX = 5;
+// 每一行左右手的分界索引：分界点之前的键属于左手，之后属于右手。
+// 数字行含反引号键，分界点比字母行右移一位；空格行由双手拇指共用，不做分隔。
+const HAND_SPLIT_INDEXES = [6, 5, 5, 5, 1];
+
+const ROWS: KeyInfo[][] = ROW_SEEDS.map((row, rowIdx) => {
+  const split = HAND_SPLIT_INDEXES[rowIdx] ?? row.length;
+  return row.map((key, i) => ({
+    ...key,
+    hand: i < split ? ('left' as const) : ('right' as const),
+  }));
+});
 
 const CODE_MAP = new Map<string, KeyInfo>();
 for (const row of ROWS) {
@@ -80,7 +95,7 @@ export class KeyboardRenderer {
   private keyElements = new Map<string, HTMLElement>();
   private hintEl: HTMLElement;
   private handsEl: HTMLElement;
-  private fingerElements = new Map<Finger, HTMLElement>();
+  private fingerElements = new Map<string, HTMLElement>();
 
   constructor(containerId: string, hintId: string, handsId: string) {
     const container = document.getElementById(containerId);
@@ -97,11 +112,13 @@ export class KeyboardRenderer {
   }
 
   private renderKeyboard(): void {
-    for (const row of ROWS) {
+    for (let rowIdx = 0; rowIdx < ROWS.length; rowIdx++) {
+      const row = ROWS[rowIdx];
+      const split = HAND_SPLIT_INDEXES[rowIdx] ?? -1;
       const rowEl = document.createElement('div');
       rowEl.className = 'keyboard-row';
       for (let i = 0; i < row.length; i++) {
-        if (i === HAND_SPLIT_INDEX && row.length > HAND_SPLIT_INDEX) {
+        if (split >= 0 && i === split && row.length > split) {
           const divider = document.createElement('div');
           divider.className = 'hand-divider';
           divider.setAttribute('aria-hidden', 'true');
@@ -110,9 +127,10 @@ export class KeyboardRenderer {
 
         const key = row[i];
         const keyEl = document.createElement('div');
-        keyEl.className = `key ${key.finger}`;
+        keyEl.className = `key ${key.finger} hand-${key.hand}`;
         keyEl.textContent = key.label;
         keyEl.dataset.code = key.code;
+        keyEl.dataset.hand = key.hand;
         if (key.label === 'Space') {
           keyEl.classList.add('space');
           keyEl.style.width = `${key.width}px`;
@@ -129,16 +147,20 @@ export class KeyboardRenderer {
     const wrapper = document.createElement('div');
     wrapper.className = 'hands-wrapper';
 
-    wrapper.appendChild(this.createHand('左手', ['pinky', 'ring', 'middle', 'index', 'thumb']));
-    wrapper.appendChild(this.createHand('右手', ['thumb', 'index', 'middle', 'ring', 'pinky']));
+    wrapper.appendChild(
+      this.createHand('左手', 'left', ['pinky', 'ring', 'middle', 'index', 'thumb'])
+    );
+    wrapper.appendChild(
+      this.createHand('右手', 'right', ['thumb', 'index', 'middle', 'ring', 'pinky'])
+    );
 
     this.handsEl.appendChild(wrapper);
     this.handsEl.appendChild(this.createLegend());
   }
 
-  private createHand(label: string, fingers: Finger[]): HTMLElement {
+  private createHand(label: string, handSide: Hand, fingers: Finger[]): HTMLElement {
     const hand = document.createElement('div');
-    hand.className = 'hand';
+    hand.className = `hand hand-${handSide}`;
 
     const title = document.createElement('div');
     title.className = 'hand-label';
@@ -151,8 +173,9 @@ export class KeyboardRenderer {
       const fingerEl = document.createElement('div');
       fingerEl.className = `finger ${finger}`;
       fingerEl.dataset.finger = finger;
-      fingerEl.title = this.fingerName(finger);
-      this.fingerElements.set(finger, fingerEl);
+      fingerEl.dataset.hand = handSide;
+      fingerEl.title = `${label}·${this.fingerName(finger)}`;
+      this.fingerElements.set(`${handSide}:${finger}`, fingerEl);
       fingersEl.appendChild(fingerEl);
     }
     hand.appendChild(fingersEl);
@@ -179,6 +202,20 @@ export class KeyboardRenderer {
       item.appendChild(document.createTextNode(name));
       legend.appendChild(item);
     }
+
+    const handItems: [Hand, string][] = [
+      ['left', '左手'],
+      ['right', '右手'],
+    ];
+    for (const [handSide, name] of handItems) {
+      const item = document.createElement('div');
+      item.className = 'legend-item';
+      const dot = document.createElement('span');
+      dot.className = `legend-dot hand-${handSide}`;
+      item.appendChild(dot);
+      item.appendChild(document.createTextNode(name));
+      legend.appendChild(item);
+    }
     return legend;
   }
 
@@ -192,9 +229,10 @@ export class KeyboardRenderer {
 
     this.clear();
     el.classList.add('active');
-    this.hintEl.textContent = `${key.label} → 使用 ${this.fingerName(key.finger)}`;
+    const handName = key.hand === 'left' ? '左手' : '右手';
+    this.hintEl.textContent = `${key.label} → ${handName} ${this.fingerName(key.finger)}`;
 
-    const fingerEl = this.fingerElements.get(key.finger);
+    const fingerEl = this.fingerElements.get(`${key.hand}:${key.finger}`);
     fingerEl?.classList.add('active');
 
     window.setTimeout(() => {

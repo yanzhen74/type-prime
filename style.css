@@ -156,6 +156,15 @@ body {
   border-color: #fbbf24;
 }
 
+/* 左右手底色区分（左手冷色、右手暖色） */
+.key.hand-left {
+  background: #17324f;
+}
+
+.key.hand-right {
+  background: #3d2340;
+}
+
 .key.active {
   background: var(--accent);
   color: #0f172a;
@@ -251,6 +260,16 @@ th {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+
+.hand.hand-left {
+  background: rgba(23, 50, 79, 0.55);
+}
+
+.hand.hand-right {
+  background: rgba(61, 35, 64, 0.55);
 }
 
 .hand-label {
@@ -350,6 +369,16 @@ th {
 .legend-dot.thumb {
   border-color: #fbbf24;
   background: #fbbf24;
+}
+
+.legend-dot.hand-left {
+  border-color: #17324f;
+  background: #17324f;
+}
+
+.legend-dot.hand-right {
+  border-color: #3d2340;
+  background: #3d2340;
 }
 
 #game-input {
