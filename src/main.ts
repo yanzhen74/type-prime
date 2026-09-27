@@ -1,10 +1,10 @@
-import { UserStorage } from './storage.js';
+import { UserProgress } from './storage.js';
 import { KeyboardRenderer } from './keyboard.js';
 import { FallingWordGame } from './game.js';
 import type { GameState } from './types.js';
 
 class App {
-  private storage: UserStorage;
+  private storage: UserProgress;
   private keyboard: KeyboardRenderer;
   private game: FallingWordGame;
 
@@ -25,7 +25,7 @@ class App {
   private rankBody = document.querySelector('#rank-table tbody') as HTMLElement;
 
   constructor() {
-    this.storage = new UserStorage();
+    this.storage = new UserProgress();
     this.keyboard = new KeyboardRenderer('keyboard-container', 'finger-hint', 'hands-diagram');
     this.game = new FallingWordGame(
       'game-canvas',
