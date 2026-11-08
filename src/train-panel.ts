@@ -1,5 +1,4 @@
 import type {
-  CharResult,
   Difficulty,
   DrillPhase,
   Finger,
@@ -743,6 +742,10 @@ export class TrainPanel {
     this.wordDifficultySelect = requireEl<HTMLSelectElement>('word-difficulty-select');
     this.textTarget = requireEl<HTMLElement>('text-target');
     this.textInput = requireEl<HTMLElement>('text-input');
+    // 清空模板残留的注释/缩进空白文本节点：容器为 white-space:pre-wrap，
+    // 残留空白会被渲染为可见缩进/空行，破坏逐字符左对齐
+    this.textTarget.textContent = '';
+    this.textInput.textContent = '';
     this.statWpm = requireEl<HTMLElement>('stat-wpm');
     this.statCpm = requireEl<HTMLElement>('stat-cpm');
     this.statAccuracy = requireEl<HTMLElement>('stat-accuracy');
@@ -845,7 +848,9 @@ export class TrainPanel {
       for (const article of articles) {
         const option = document.createElement('option');
         option.value = article.id;
-        option.textContent = article.title;
+        option.textContent = article.source
+          ? `${article.title} · ${article.source}`
+          : article.title;
         group.appendChild(option);
       }
       this.articleSelect.appendChild(group);
@@ -1086,7 +1091,7 @@ export class TrainPanel {
 
   private renderPreview(text: string): void {
     this.syncTargetSpans(text);
-    this.updateTargetStates(0, []);
+    this.updateTargetStates(0);
     this.clearInputDisplay();
     this.updateStatsDisplay(0, 0, 0, 0, countTypeable(text));
     this.updateHint(text.length > 0 ? text[0] : null);
@@ -1274,7 +1279,7 @@ export class TrainPanel {
 
   private handleProgress(p: TrainProgress): void {
     this.syncTargetSpans(this.trainEngine.getTargetText());
-    this.updateTargetStates(p.completed, this.trainEngine.getCharResults());
+    this.updateTargetStates(p.completed);
     this.syncInputSpans();
     const accuracy = p.completed > 0 ? (p.correct / p.completed) * 100 : 0;
     this.updateStatsDisplay(p.wpm, p.cpm, accuracy, p.completed, p.total);
@@ -1378,22 +1383,16 @@ export class TrainPanel {
   }
 
   /**
-   * 更新目标行类名：已输入 .typed、当前位置 .current（换行符保留 .newline）。
-   * 另根据逐字符比对结果，在错误位置（correct === false）追加 .error：
-   * 标准文本行的正确字符在错误处标红加粗，提示用户此处应输入的正确字符。
+   * 更新目标行类名：目标行作为干净的「原行」参照，统一可读颜色，
+   * 仅标记当前位置 .current（换行符保留 .newline）。
+   * 进度与正误反馈全部下沉到下方输入行，原行不做亮/淡进度、不标红。
    */
-  private updateTargetStates(completed: number, results: CharResult[]): void {
+  private updateTargetStates(completed: number): void {
     const total = this.targetSpans.length;
     for (let i = 0; i < total; i++) {
       let cls = this.targetSpans[i].classList.contains('newline') ? 'char newline' : 'char';
-      if (i < completed) {
-        cls += ' typed';
-      }
       if (i === completed && completed < total) {
         cls += ' current';
-      }
-      if (results[i]?.correct === false) {
-        cls += ' error';
       }
       const span = this.targetSpans[i];
       if (span.className !== cls) {
@@ -1442,6 +1441,8 @@ export class TrainPanel {
       }
     }
 
+    // 输入行独立成块且可滚动：滚动到末尾，保证光标与最新输入始终可见
+    this.textInput.scrollTop = this.textInput.scrollHeight;
     this.applyPendingShake();
   }
 

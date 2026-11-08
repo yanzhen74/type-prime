@@ -28,6 +28,23 @@ const VOCABULARY = [
   'return',
 ];
 
+/** 初始/上限生命：提高容错，避免过早失败打击积极性 */
+const START_LIVES = 5;
+const MAX_LIVES = 5;
+/** 每关需销毁的单词数（通关目标），达成即升关 */
+const LEVEL_CLEAR_WORDS = 10;
+/** 累计通关多少关后判定「通关成功」（胜利） */
+const LEVELS_TO_WIN = 10;
+/** 下落速度饱和曲线参数：base + gain*(1 - e^{-level/k})，斜率随等级递减、整体平缓 */
+const FALL_BASE = 0.7;
+const FALL_GAIN = 1.8;
+const FALL_SATUR_K = 8;
+const FALL_JITTER = 0.4;
+/** 出词间隔线性递减参数与下限（下限抬高，避免后期过于密集） */
+const SPAWN_BASE = 2400;
+const SPAWN_PER_LEVEL = 70;
+const SPAWN_FLOOR = 1400;
+
 /** 游戏难度与词源选项（均可选，缺省为原始行为） */
 export interface GameOptions {
   /** 起始等级（>=1），决定初始下落速度与生成间隔；升级仍按分数递增 */
@@ -40,22 +57,20 @@ export interface GameOptions {
 
 /**
  * 下落速度公式（抽为纯函数便于测试）。
+ * 采用饱和曲线 base + gain*(1 - e^{-level/k})：低等级斜率本就小、随等级递增斜率进一步递减，
+ * 使各关之间难度斜率平缓且有上限，避免线性无限加速导致劝退。
  * @param level 当前等级
  * @param speedMultiplier 速度倍率
  * @param random [0,1) 随机因子（由调用方传入 Math.random()）
  */
 export function computeFallSpeed(level: number, speedMultiplier: number, random: number): number {
-  return (0.8 + level * 0.25 + random * 0.5) * speedMultiplier;
+  const saturated = FALL_BASE + FALL_GAIN * (1 - Math.exp(-level / FALL_SATUR_K));
+  return (saturated + random * FALL_JITTER) * speedMultiplier;
 }
 
-/** 生成间隔公式（抽为纯函数）：等级越高间隔越短，下限 1200ms */
+/** 生成间隔公式（抽为纯函数）：等级越高间隔越短，递减更缓且下限抬高到 1400ms */
 export function computeSpawnInterval(level: number): number {
-  return Math.max(1200, 2500 - level * 200);
-}
-
-/** 由分数换算等级（抽为纯函数）：每 100 分升一级，以 startingLevel 为基准 */
-export function computeLevel(score: number, startingLevel: number): number {
-  return Math.floor(score / 100) + startingLevel;
+  return Math.max(SPAWN_FLOOR, SPAWN_BASE - level * SPAWN_PER_LEVEL);
 }
 
 export class FallingWordGame {
@@ -111,7 +126,7 @@ export class FallingWordGame {
   private createInitialState(): GameState {
     return {
       score: 0,
-      lives: 3,
+      lives: START_LIVES,
       level: this.startingLevel,
       isRunning: false,
       isPaused: false,
@@ -120,6 +135,9 @@ export class FallingWordGame {
       lockedWordIndex: null,
       mistakes: 0,
       countdown: 3,
+      wordsClearedThisLevel: 0,
+      levelsCleared: 0,
+      victory: false,
     };
   }
 
@@ -257,12 +275,29 @@ export class FallingWordGame {
     this.state.lockedWordIndex = null;
     this.state.currentInput = '';
 
-    // 每 100 分升一级（以起始等级为基准）
-    const newLevel = computeLevel(this.state.score, this.startingLevel);
-    if (newLevel > this.state.level) {
-      this.state.level = newLevel;
+    // 累计本关进度；达成通关目标即升关（平缓斜率 + 允许通关），否则仅刷新状态
+    this.state.wordsClearedThisLevel = (this.state.wordsClearedThisLevel ?? 0) + 1;
+    if (this.state.wordsClearedThisLevel >= LEVEL_CLEAR_WORDS) {
+      this.handleLevelClear();
+    } else {
+      this.onUpdate(this.state);
     }
+  }
 
+  /** 通关当前关：升关、回补生命、记录通关数并闪横幅；达到总关数则判定通关成功 */
+  private handleLevelClear(): void {
+    this.state.levelsCleared = (this.state.levelsCleared ?? 0) + 1;
+    this.state.level += 1;
+    this.state.wordsClearedThisLevel = 0;
+    this.state.lives = Math.min(this.state.lives + 1, MAX_LIVES);
+    this.state.levelClearFlashAt = performance.now();
+
+    if ((this.state.levelsCleared ?? 0) >= LEVELS_TO_WIN) {
+      this.state.victory = true;
+      this.state.isRunning = false;
+      cancelAnimationFrame(this.animationId);
+      this.onGameOver(this.state.score);
+    }
     this.onUpdate(this.state);
   }
 
@@ -446,6 +481,29 @@ export class FallingWordGame {
       ctx.fillStyle = '#f8fafc';
       ctx.font = '20px sans-serif';
       ctx.fillText('按 Ctrl+P 继续', width / 2, height / 2 + 40);
+    }
+
+    // 通关横幅：升关后 ~1.2s 内居中提示，强化「过关」正反馈
+    const flashAt = this.state.levelClearFlashAt;
+    if (this.state.isRunning && flashAt !== undefined && now - flashAt < 1200) {
+      ctx.fillStyle = '#22c55e';
+      ctx.font = 'bold 32px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`第 ${this.state.level - 1} 关 通关！`, width / 2, height / 2 - 60);
+    }
+
+    // 通关成功（胜利）遮罩
+    if (this.state.victory) {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = '#22c55e';
+      ctx.font = 'bold 42px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('通关成功！', width / 2, height / 2 - 20);
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = '24px sans-serif';
+      ctx.fillText(`最终得分: ${this.state.score}`, width / 2, height / 2 + 30);
     }
 
     if (!this.state.isRunning && this.state.lives <= 0) {

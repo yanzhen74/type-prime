@@ -1,31 +1,30 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { computeFallSpeed, computeSpawnInterval, computeLevel, FallingWordGame } from './game.js';
+import { computeFallSpeed, computeSpawnInterval, FallingWordGame } from './game.js';
 import type { GameState } from './types.js';
 
 describe('游戏难度纯函数', () => {
-  it('computeFallSpeed 按等级/随机因子递增并整体乘以速度倍率', () => {
-    expect(computeFallSpeed(1, 1, 0)).toBeCloseTo(0.8 + 0.25);
-    expect(computeFallSpeed(5, 1, 0)).toBeCloseTo(0.8 + 5 * 0.25);
+  it('computeFallSpeed 采用饱和曲线：递增但斜率递减、有上限，并整体乘以速度倍率', () => {
+    const f = (lv: number, m = 1, r = 0) => computeFallSpeed(lv, m, r);
+    // 与饱和曲线公式一致
+    expect(f(1)).toBeCloseTo(0.7 + 1.8 * (1 - Math.exp(-1 / 8)));
+    // 单调递增
+    expect(f(10)).toBeGreaterThan(f(1));
+    // 斜率递减（各关难度斜率平缓）：低段增量 > 高段增量
+    expect(f(2) - f(1)).toBeGreaterThan(f(11) - f(10));
+    // 有上限：base + gain + jitter
+    expect(f(100, 1, 1)).toBeLessThanOrEqual(0.7 + 1.8 + 0.4 + 1e-9);
     // 速度倍率线性放大
-    expect(computeFallSpeed(1, 2, 0)).toBeCloseTo((0.8 + 0.25) * 2);
-    expect(computeFallSpeed(1, 0.5, 0)).toBeCloseTo((0.8 + 0.25) * 0.5);
-    // 随机因子贡献 0~0.5
-    expect(computeFallSpeed(1, 1, 1)).toBeCloseTo(0.8 + 0.25 + 0.5);
+    expect(f(1, 2)).toBeCloseTo(2 * f(1, 1));
+    expect(f(1, 0.5)).toBeCloseTo(0.5 * f(1, 1));
+    // 随机因子贡献 0~0.4
+    expect(f(1, 1, 1)).toBeCloseTo(f(1, 1, 0) + 0.4);
   });
 
-  it('computeSpawnInterval 随等级缩短且有 1200ms 下限', () => {
-    expect(computeSpawnInterval(1)).toBe(2300);
-    expect(computeSpawnInterval(5)).toBe(1500);
-    expect(computeSpawnInterval(10)).toBe(1200);
-    expect(computeSpawnInterval(50)).toBe(1200);
-  });
-
-  it('computeLevel 每 100 分升一级，以 startingLevel 为基准', () => {
-    expect(computeLevel(0, 1)).toBe(1);
-    expect(computeLevel(99, 1)).toBe(1);
-    expect(computeLevel(100, 1)).toBe(2);
-    expect(computeLevel(0, 5)).toBe(5);
-    expect(computeLevel(250, 5)).toBe(7);
+  it('computeSpawnInterval 随等级缓慢缩短且有 1400ms 下限', () => {
+    expect(computeSpawnInterval(1)).toBe(2330);
+    expect(computeSpawnInterval(10)).toBe(1700);
+    expect(computeSpawnInterval(15)).toBe(1400);
+    expect(computeSpawnInterval(50)).toBe(1400);
   });
 });
 
@@ -91,5 +90,18 @@ describe('FallingWordGame 起始等级接线', () => {
     expect(box.state?.level).toBe(8);
     game.start();
     expect(box.state?.level).toBe(8);
+  });
+
+  it('初始生命为 5（提高容错、不轻易劝退）', () => {
+    const box: { state: GameState | null } = { state: null };
+    const game = new FallingWordGame(
+      'game-canvas',
+      (s) => {
+        box.state = s;
+      },
+      () => {}
+    );
+    game.start();
+    expect(box.state?.lives).toBe(5);
   });
 });

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>type-prime - 打字游戏原型</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css?v=3" />
   </head>
   <body>
     <div id="app">
@@ -111,15 +111,13 @@
                 <span class="status-badge idle" id="train-status-badge">等待开始</span>
               </div>
 
-              <!-- 双行对照文本区 -->
+              <!-- 双行对照文本区：上为可滚动的原行，下为始终可见的用户输入行。
+                   注意：两个容器内部必须完全为空（不得留注释/缩进空白），
+                   因其 white-space:pre-wrap 会把残留空白渲染为可见缩进/空行。 -->
               <div class="train-text-display" id="train-text-display">
-                <div class="text-target" id="text-target">
-                  <!-- 标准文本，由 JS 填充 span 元素 -->
-                </div>
-                <div class="text-input" id="text-input">
-                  <!-- 用户输入，由 JS 填充 span 元素 -->
-                </div>
+                <div class="text-target" id="text-target"></div>
               </div>
+              <div class="text-input" id="text-input"></div>
 
               <!-- 实时统计栏 -->
               <div class="train-stats" id="train-stats">
@@ -418,6 +416,6 @@
       </footer>
     </div>
 
-    <script type="module" src="dist/main.js"></script>
+    <script type="module" src="dist/main.js?v=3"></script>
   </body>
 </html>

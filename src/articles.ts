@@ -20,6 +20,8 @@ export interface PresetArticle {
   /** 所属难度分级 id */
   difficultyId: string;
   content: string;
+  /** 出处/作者（经典名篇均为公有领域作品，标注来源） */
+  source?: string;
 }
 
 /** 文章难度分级定义（由浅入深） */
@@ -65,6 +67,20 @@ export const PRESET_ARTICLES: PresetArticle[] = [
     difficultyId: 'starter',
     content: 'the cat sat. the dog ran. the sun set. all was still and calm.',
   },
+  {
+    id: 'starter-proverb-tortoise',
+    title: '龟兔赛跑・箴言',
+    difficultyId: 'starter',
+    content: 'slow and steady wins the race.',
+    source: '伊索寓言（公有领域）',
+  },
+  {
+    id: 'starter-proverb-bird',
+    title: '早起的鸟儿・箴言',
+    difficultyId: 'starter',
+    content: 'the early bird catches the worm.',
+    source: '英语谚语（公有领域）',
+  },
   // --- 基础 ---
   {
     id: 'basic-busy-morning',
@@ -79,6 +95,20 @@ export const PRESET_ARTICLES: PresetArticle[] = [
     difficultyId: 'basic',
     content:
       'Anna has a small garden behind her house. She plants roses, tulips, and green beans, and she waters them every day.',
+  },
+  {
+    id: 'basic-hamlet-question',
+    title: '生存还是毁灭',
+    difficultyId: 'basic',
+    content: 'To be, or not to be, that is the question.',
+    source: '莎士比亚《哈姆雷特》（公有领域）',
+  },
+  {
+    id: 'basic-proverb-will',
+    title: '有志者事竟成・箴言',
+    difficultyId: 'basic',
+    content: 'Where there is a will, there is a way.',
+    source: '英语谚语（公有领域）',
   },
   // --- 进阶 ---
   {
@@ -95,6 +125,30 @@ export const PRESET_ARTICLES: PresetArticle[] = [
     content:
       'The forecast promised bright sunshine; instead, dark clouds rolled in, and heavy rain poured all afternoon. Who could believe it?',
   },
+  {
+    id: 'advanced-pride-prejudice',
+    title: '傲慢与偏见・开篇',
+    difficultyId: 'advanced',
+    content:
+      'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.',
+    source: '简·奥斯汀《傲慢与偏见》（1813，公有领域）',
+  },
+  {
+    id: 'advanced-tale-two-cities',
+    title: '双城记・开篇',
+    difficultyId: 'advanced',
+    content:
+      'It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness.',
+    source: '狄更斯《双城记》（1859，公有领域）',
+  },
+  {
+    id: 'advanced-alice-wonderland',
+    title: '爱丽丝梦游仙境・开篇',
+    difficultyId: 'advanced',
+    content:
+      'Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do.',
+    source: '刘易斯·卡罗尔《爱丽丝梦游仙境》（1865，公有领域）',
+  },
   // --- 综合 ---
   {
     id: 'master-mixed-symbols',
@@ -109,6 +163,30 @@ export const PRESET_ARTICLES: PresetArticle[] = [
     difficultyId: 'master',
     content:
       'Set timeout = 500ms; if (retries >= 3) { log("error: 404"); } // about 50% of bugs hide right here.',
+  },
+  {
+    id: 'master-gettysburg-address',
+    title: '葛底斯堡演说・节选',
+    difficultyId: 'master',
+    content:
+      'Four score and seven years ago our fathers brought forth on this continent, a new nation, conceived in Liberty, and dedicated to the proposition that all men are created equal.',
+    source: '林肯《葛底斯堡演说》（1863，公有领域）',
+  },
+  {
+    id: 'master-the-raven',
+    title: '乌鸦・节选',
+    difficultyId: 'master',
+    content:
+      'Once upon a midnight dreary, while I pondered, weak and weary, Over many a quaint and curious volume of forgotten lore.',
+    source: '爱伦·坡《乌鸦》（1845，公有领域）',
+  },
+  {
+    id: 'master-julius-caesar',
+    title: '凯撒大帝・节选',
+    difficultyId: 'master',
+    content:
+      'Friends, Romans, countrymen, lend me your ears; I come to bury Caesar, not to praise him.',
+    source: '莎士比亚《凯撒大帝》（公有领域）',
   },
 ];
 

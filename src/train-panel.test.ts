@@ -124,7 +124,7 @@ describe('TrainPanel 错误输入反馈渲染', () => {
     mountFixture();
   });
 
-  it('错误位：标准文本行标红（.error）且仍显示正确字符，输入行红底回显真实敲入字符', () => {
+  it('原行保持干净参照（不标红），输入行回显真实敲入字符且错误位变红（.incorrect）', () => {
     const h = setup();
     h.feed(char('a')); // 正确
     h.feed(char('x')); // 错误，应为 b
@@ -132,12 +132,14 @@ describe('TrainPanel 错误输入反馈渲染', () => {
     const target = h.targetSpans();
     const input = h.inputSpans();
 
-    expect(target[1].classList.contains('error')).toBe(true);
-    expect(target[1].textContent).toBe('b'); // 顶行始终是标准（正确）字符
-    expect(target[0].classList.contains('error')).toBe(false); // 正确位不标红
+    // 原行：干净参照，错误位不再标红，仍显示标准（正确）字符
+    expect(target[1].classList.contains('error')).toBe(false);
+    expect(target[1].textContent).toBe('b');
+    expect(target[0].classList.contains('error')).toBe(false);
 
+    // 输入行：回显用户真实敲入字符，错误位 .incorrect（红色）
     expect(input[1].classList.contains('incorrect')).toBe(true);
-    expect(input[1].textContent).toBe('x'); // 底行回显用户真实敲入的字符
+    expect(input[1].textContent).toBe('x');
     expect(input[0].classList.contains('correct')).toBe(true);
   });
 

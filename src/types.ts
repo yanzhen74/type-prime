@@ -26,6 +26,14 @@ export interface GameState {
   countdown: number;
   /** 最近一次错误输入（字符 + 时间戳），用于短时红色闪烁/shake 反馈；超时后不再渲染 */
   lastError?: { char: string; at: number };
+  /** 本关已销毁单词数（达成通关目标即升关） */
+  wordsClearedThisLevel?: number;
+  /** 累计已通关关数 */
+  levelsCleared?: number;
+  /** 是否已通关成功（胜利） */
+  victory?: boolean;
+  /** 最近一次升关时间戳，用于短时「通关」横幅 */
+  levelClearFlashAt?: number;
 }
 
 export type Finger = 'pinky' | 'ring' | 'middle' | 'index' | 'thumb' | 'unknown';

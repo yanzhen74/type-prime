@@ -491,6 +491,8 @@ th {
   gap: 1rem;
   min-width: 0;
   overflow: hidden;
+  /* 子项撑满宽度，避免输入行被 flex 收缩/偏移破坏与原行的对齐 */
+  align-items: stretch;
 }
 
 .train-level-select {
@@ -595,6 +597,8 @@ th {
   font-family: 'Fira Code', 'Cascadia Code', monospace;
   font-size: 1.1rem;
   line-height: 2;
+  /* 强制左对齐：逐字符对照必须与原行垂直对齐，不能被继承的居中排版破坏 */
+  text-align: left;
   overflow-wrap: break-word;
   word-break: break-word;
   white-space: pre-wrap;
@@ -608,7 +612,6 @@ th {
 }
 
 .text-target {
-  margin-bottom: 0.75rem;
   min-height: 1.5em;
   letter-spacing: 0.05em;
   overflow-wrap: break-word;
@@ -616,37 +619,45 @@ th {
   white-space: pre-wrap;
 }
 
+/* 原行（标准文本）：统一可读颜色，作为干净参照；进度与正误由下方输入行承担 */
 .text-target .char {
-  color: var(--muted);
-  opacity: 0.3;
-}
-
-.text-target .char.typed {
-  opacity: 1;
   color: var(--text);
 }
 
 .text-target .char.current {
-  opacity: 1;
   color: var(--accent);
   border-bottom: 2px solid var(--accent);
 }
 
-/* 标准文本行：错误位置的正确字符标红加粗（提示“此处应输入这个字符”） */
-.text-target .char.error {
-  opacity: 1;
-  color: var(--danger);
-  font-weight: 700;
-  background: rgba(244, 63, 94, 0.15);
-  border-radius: 3px;
-}
-
+/* 用户输入行：独立成块、始终可见（不再被原行滚动视窗裁掉），自动滚动跟随光标 */
 .text-input {
-  min-height: 1.5em;
+  margin-top: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  min-height: 2.5em;
+  max-height: 4.5em;
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 1.1rem;
+  line-height: 2;
   letter-spacing: 0.05em;
   overflow-wrap: break-word;
   word-break: break-word;
   white-space: pre-wrap;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  /* 强制左对齐：输入行须与原行逐字符垂直对齐 */
+  text-align: left;
+  /* 撑满父容器宽度，防止被 flex 收缩成内容宽而偏移/看似居中 */
+  width: 100%;
+  box-sizing: border-box;
+  align-self: stretch;
+}
+
+.text-input::-webkit-scrollbar {
+  display: none;
 }
 
 .text-input .char {
@@ -657,11 +668,12 @@ th {
   color: var(--success);
 }
 
+/* 输入行：打错的字符变红（弱红底保证位置与错误空格可见） */
 .text-input .char.incorrect {
-  color: #fff;
-  background: var(--danger);
+  color: var(--danger);
+  font-weight: 700;
+  background: rgba(244, 63, 94, 0.15);
   border-radius: 3px;
-  padding: 0 1px;
 }
 
 /* 错误发生瞬间的一次性抖动动画 */
@@ -693,10 +705,6 @@ th {
 .text-input .char.newline {
   opacity: 0;
   pointer-events: none;
-}
-
-.text-target .char.newline.typed {
-  opacity: 0;
 }
 
 .train-stats {
