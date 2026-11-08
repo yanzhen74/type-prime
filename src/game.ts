@@ -28,6 +28,36 @@ const VOCABULARY = [
   'return',
 ];
 
+/** 游戏难度与词源选项（均可选，缺省为原始行为） */
+export interface GameOptions {
+  /** 起始等级（>=1），决定初始下落速度与生成间隔；升级仍按分数递增 */
+  startingLevel?: number;
+  /** 速度倍率，乘在基础下落速度上（0.5x~2x） */
+  speedMultiplier?: number;
+  /** 词源提供者：返回一个单词文本；缺省或返回空时用内置词表随机 */
+  wordProvider?: () => string;
+}
+
+/**
+ * 下落速度公式（抽为纯函数便于测试）。
+ * @param level 当前等级
+ * @param speedMultiplier 速度倍率
+ * @param random [0,1) 随机因子（由调用方传入 Math.random()）
+ */
+export function computeFallSpeed(level: number, speedMultiplier: number, random: number): number {
+  return (0.8 + level * 0.25 + random * 0.5) * speedMultiplier;
+}
+
+/** 生成间隔公式（抽为纯函数）：等级越高间隔越短，下限 1200ms */
+export function computeSpawnInterval(level: number): number {
+  return Math.max(1200, 2500 - level * 200);
+}
+
+/** 由分数换算等级（抽为纯函数）：每 100 分升一级，以 startingLevel 为基准 */
+export function computeLevel(score: number, startingLevel: number): number {
+  return Math.floor(score / 100) + startingLevel;
+}
+
 export class FallingWordGame {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -37,11 +67,16 @@ export class FallingWordGame {
   private countdownTimer = 0;
   private onUpdate: (state: GameState) => void;
   private onGameOver: (score: number) => void;
+  // 难度与词源选项
+  private startingLevel: number;
+  private speedMultiplier: number;
+  private wordProvider?: () => string;
 
   constructor(
     canvasId: string,
     onUpdate: (state: GameState) => void,
-    onGameOver: (score: number) => void
+    onGameOver: (score: number) => void,
+    options: GameOptions = {}
   ) {
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
     if (!canvas) {
@@ -55,14 +90,29 @@ export class FallingWordGame {
     this.ctx = ctx;
     this.onUpdate = onUpdate;
     this.onGameOver = onGameOver;
+    this.startingLevel = Math.max(1, options.startingLevel ?? 1);
+    this.speedMultiplier = options.speedMultiplier ?? 1;
+    this.wordProvider = options.wordProvider;
     this.state = this.createInitialState();
+  }
+
+  /**
+   * 应用新的难度/词源选项并重置游戏（设置变更时调用）。
+   * 视为“全量替换”：调用方（main.ts）总是传入由完整设置派生的选项，
+   * 因此 wordProvider 为 undefined 时即表示回退到内置词表。
+   */
+  applyOptions(options: GameOptions): void {
+    this.startingLevel = Math.max(1, options.startingLevel ?? 1);
+    this.speedMultiplier = options.speedMultiplier ?? 1;
+    this.wordProvider = options.wordProvider;
+    this.reset();
   }
 
   private createInitialState(): GameState {
     return {
       score: 0,
       lives: 3,
-      level: 1,
+      level: this.startingLevel,
       isRunning: false,
       isPaused: false,
       words: [],
@@ -131,7 +181,7 @@ export class FallingWordGame {
       if (matchIndex !== null) {
         this.state.lockedWordIndex = matchIndex;
       } else {
-        this.state.mistakes += 1;
+        this.recordError(char);
         this.onUpdate(this.state);
         return;
       }
@@ -151,9 +201,15 @@ export class FallingWordGame {
         this.onUpdate(this.state);
       }
     } else {
-      this.state.mistakes += 1;
+      this.recordError(char);
       this.onUpdate(this.state);
     }
+  }
+
+  /** 记录一次错误输入：累加失误并写入 lastError（字符 + 时间戳），供 draw() 做短时红色闪烁反馈 */
+  private recordError(char: string): void {
+    this.state.mistakes += 1;
+    this.state.lastError = { char, at: performance.now() };
   }
 
   handleBackspace(): void {
@@ -201,8 +257,8 @@ export class FallingWordGame {
     this.state.lockedWordIndex = null;
     this.state.currentInput = '';
 
-    // 每 100 分升一级
-    const newLevel = Math.floor(this.state.score / 100) + 1;
+    // 每 100 分升一级（以起始等级为基准）
+    const newLevel = computeLevel(this.state.score, this.startingLevel);
     if (newLevel > this.state.level) {
       this.state.level = newLevel;
     }
@@ -211,17 +267,21 @@ export class FallingWordGame {
   }
 
   private spawnWord(): void {
-    const text = VOCABULARY[Math.floor(Math.random() * VOCABULARY.length)];
+    const provided = this.wordProvider?.();
+    const text =
+      provided && provided.length > 0
+        ? provided
+        : VOCABULARY[Math.floor(Math.random() * VOCABULARY.length)];
     const padding = 60;
     const x = padding + Math.random() * (this.canvas.width - padding * 2);
-    const speed = 0.8 + this.state.level * 0.25 + Math.random() * 0.5;
+    const speed = computeFallSpeed(this.state.level, this.speedMultiplier, Math.random());
     this.state.words.push({ text, x, y: 0, speed, typedIndex: 0 });
   }
 
   private loop(now: number): void {
     if (!this.state.isRunning || this.state.isPaused || this.state.countdown > 0) return;
 
-    const spawnInterval = Math.max(1200, 2500 - this.state.level * 200);
+    const spawnInterval = computeSpawnInterval(this.state.level);
     if (now - this.lastSpawn > spawnInterval) {
       this.spawnWord();
       this.lastSpawn = now;
@@ -269,6 +329,13 @@ export class FallingWordGame {
     const width = this.canvas.width;
     const height = this.canvas.height;
 
+    // 错误反馈窗口：lastError 发生后 ~300ms 内做红色闪烁 + shake，超时自动恢复正常渲染
+    const now = performance.now();
+    const lastError = this.state.lastError;
+    const errorActive = lastError !== undefined && now - lastError.at < 300;
+    // 错误后的衰减进度（0→1），用于 shake 幅度与闪烁淡出
+    const errorT = errorActive && lastError ? (now - lastError.at) / 300 : 1;
+
     ctx.clearRect(0, 0, width, height);
 
     // 背景网格
@@ -287,19 +354,31 @@ export class FallingWordGame {
       ctx.stroke();
     }
 
-    // 危险线
-    ctx.strokeStyle = '#f43f5e';
+    // 危险线（无锁定单词时，错误在此区域红色闪烁）
+    const dangerFlash = errorActive && this.state.lockedWordIndex === null;
+    ctx.save();
+    ctx.strokeStyle = dangerFlash ? '#ff1f4b' : '#f43f5e';
+    ctx.lineWidth = dangerFlash ? 4 : 1;
+    if (dangerFlash) {
+      ctx.shadowColor = '#f43f5e';
+      ctx.shadowBlur = 16;
+    }
     ctx.setLineDash([8, 8]);
     ctx.beginPath();
     ctx.moveTo(0, height - 30);
     ctx.lineTo(width, height - 30);
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.restore();
 
     // 单词
     for (let i = 0; i < this.state.words.length; i++) {
       const word = this.state.words[i];
       const isLocked = i === this.state.lockedWordIndex;
+      // 错误时锁定单词做衰减 shake 偏移
+      const errorLocked = errorActive && isLocked;
+      const shakeX = errorLocked ? Math.sin(errorT * Math.PI * 4) * 5 * (1 - errorT) : 0;
+      const drawX = word.x + shakeX;
 
       ctx.font = isLocked ? 'bold 26px sans-serif' : '22px sans-serif';
       ctx.textAlign = 'center';
@@ -307,27 +386,43 @@ export class FallingWordGame {
 
       // 阴影
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillText(word.text, word.x + 2, word.y + 2);
+      ctx.fillText(word.text, drawX + 2, word.y + 2);
 
-      // 已输入部分高亮
+      // 已输入部分高亮（错误时锁定单词整体染红，强调“这个单词敲错了”）
       const typed = word.text.slice(0, word.typedIndex);
       const untyped = word.text.slice(word.typedIndex);
       const fullWidth = ctx.measureText(word.text).width;
       const typedWidth = ctx.measureText(typed).width;
-      const startX = word.x - fullWidth / 2;
+      const startX = drawX - fullWidth / 2;
 
-      ctx.fillStyle = isLocked ? '#22c55e' : '#38bdf8';
+      ctx.fillStyle = errorLocked ? '#f43f5e' : isLocked ? '#22c55e' : '#38bdf8';
       ctx.fillText(typed, startX + typedWidth / 2, word.y);
 
-      ctx.fillStyle = isLocked ? '#fbbf24' : '#f8fafc';
+      ctx.fillStyle = errorLocked ? '#fca5a5' : isLocked ? '#fbbf24' : '#f8fafc';
       ctx.fillText(untyped, startX + typedWidth + ctx.measureText(untyped).width / 2, word.y);
 
       // 锁定框
       if (isLocked) {
-        ctx.strokeStyle = '#fbbf24';
+        ctx.strokeStyle = errorLocked ? '#f43f5e' : '#fbbf24';
         ctx.lineWidth = 2;
-        ctx.strokeRect(word.x - fullWidth / 2 - 8, word.y - 18, fullWidth + 16, 36);
+        ctx.strokeRect(drawX - fullWidth / 2 - 8, word.y - 18, fullWidth + 16, 36);
       }
+
+      // 错误字符标注：在锁定单词上方绘制 ✗ <错误字符>
+      if (errorLocked && lastError) {
+        ctx.fillStyle = '#f43f5e';
+        ctx.font = 'bold 20px sans-serif';
+        ctx.fillText(`✗ ${lastError.char}`, drawX, word.y - 34);
+      }
+    }
+
+    // 无锁定单词时的错误标注：在危险线上方居中绘制 ✗ <错误字符>
+    if (errorActive && this.state.lockedWordIndex === null && lastError) {
+      ctx.fillStyle = '#f43f5e';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`✗ ${lastError.char}`, width / 2, height - 60);
     }
 
     // 倒计时

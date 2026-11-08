@@ -1,6 +1,6 @@
 import { UserProgress } from './storage.js';
 import { KeyboardRenderer } from './keyboard.js';
-import { FallingWordGame } from './game.js';
+import { FallingWordGame, type GameOptions } from './game.js';
 import { TypingEngine } from './input.js';
 import { TrainPanel } from './train-panel.js';
 import { VocabularyBank } from './vocabulary.js';
@@ -8,6 +8,21 @@ import { ReviewScheduler } from './review.js';
 import { VocabPanel } from './vocab-panel.js';
 import { Dialog } from './dialog.js';
 import type { GameState } from './types.js';
+
+/** 游戏难度设置（持久化到 localStorage） */
+interface GameSettings {
+  startingLevel: number;
+  speedMultiplier: number;
+  wordSource: 'builtin' | 'vocab';
+}
+
+const GAME_SETTINGS_KEY = 'typeprime_game_settings';
+
+const DEFAULT_GAME_SETTINGS: GameSettings = {
+  startingLevel: 1,
+  speedMultiplier: 1,
+  wordSource: 'builtin',
+};
 
 class App {
   private storage: UserProgress;
@@ -39,6 +54,13 @@ class App {
   private btnPause = document.getElementById('btn-pause') as HTMLButtonElement;
   private btnReset = document.getElementById('btn-reset') as HTMLButtonElement;
   private rankBody = document.querySelector('#rank-table tbody') as HTMLElement;
+
+  // 游戏难度设置控件
+  private gameStartLevel = document.getElementById('game-start-level') as HTMLSelectElement;
+  private gameSpeed = document.getElementById('game-speed') as HTMLSelectElement;
+  private gameWordSource = document.getElementById('game-word-source') as HTMLSelectElement;
+  /** 游戏面板设置控件持有焦点时为 true，用于抑制 #game-input 失焦自动重聚焦抢夺下拉焦点 */
+  private gameControlFocused = false;
 
   constructor() {
     this.storage = new UserProgress();
@@ -75,10 +97,13 @@ class App {
       onStartReview: (wordIds) => this.startReview(wordIds),
     });
 
+    const gameSettings = this.loadGameSettings();
+    this.applySettingsToControls(gameSettings);
     this.game = new FallingWordGame(
       'game-canvas',
       (state) => this.onGameUpdate(state),
-      (score) => this.onGameOver(score)
+      (score) => this.onGameOver(score),
+      this.buildGameOptions(gameSettings)
     );
 
     this.helpModal = document.getElementById('help-modal');
@@ -86,6 +111,7 @@ class App {
     this.initTabs();
     this.initUserControls();
     this.initGameControls();
+    this.initGameSettings();
     this.initKeyboardInput();
     this.initGlobalShortcuts();
     this.renderUserSelect();
@@ -157,6 +183,12 @@ class App {
     const articleSelect = document.getElementById('article-select');
     articleSelect?.addEventListener('focus', () => this.suspendTrainInput());
     articleSelect?.addEventListener('blur', () => this.releaseUserControlFocus());
+
+    // 单词练习词库选择控件焦点保护：分类勾选框为动态生成，
+    // 用 focusin/focusout 委托到容器（focus/blur 不冒泡，focusin/focusout 冒泡）。
+    const wordSelect = document.getElementById('train-word-select');
+    wordSelect?.addEventListener('focusin', () => this.suspendTrainInput());
+    wordSelect?.addEventListener('focusout', () => this.releaseUserControlFocus());
   }
 
   /**
@@ -202,6 +234,94 @@ class App {
     });
     this.btnPause.addEventListener('click', () => this.game.pause());
     this.btnReset.addEventListener('click', () => this.game.reset());
+  }
+
+  // -------------------------------------------------------------------------
+  // 游戏难度设置（起始等级 / 速度倍率 / 词源）
+  // -------------------------------------------------------------------------
+
+  private initGameSettings(): void {
+    const controls = [this.gameStartLevel, this.gameSpeed, this.gameWordSource];
+    for (const control of controls) {
+      control.addEventListener('change', () => this.handleGameSettingChange());
+      // 焦点保护：设置控件展开期间置位 gameControlFocused，抑制 #game-input
+      // 失焦自动重聚焦抢夺下拉焦点；blur 时把焦点交还游戏输入框。
+      control.addEventListener('focus', () => {
+        this.gameControlFocused = true;
+      });
+      control.addEventListener('blur', () => {
+        this.gameControlFocused = false;
+        if (this.isGamePanelActive()) {
+          this.focusGameInput();
+        }
+      });
+    }
+  }
+
+  /** 设置变更：持久化并应用到游戏（重置当前局） */
+  private handleGameSettingChange(): void {
+    const settings = this.readGameSettings();
+    this.saveGameSettings(settings);
+    this.game.applyOptions(this.buildGameOptions(settings));
+  }
+
+  private loadGameSettings(): GameSettings {
+    try {
+      const raw = localStorage.getItem(GAME_SETTINGS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<GameSettings>;
+        return {
+          startingLevel: parsed.startingLevel ?? DEFAULT_GAME_SETTINGS.startingLevel,
+          speedMultiplier: parsed.speedMultiplier ?? DEFAULT_GAME_SETTINGS.speedMultiplier,
+          wordSource: parsed.wordSource === 'vocab' ? 'vocab' : 'builtin',
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return { ...DEFAULT_GAME_SETTINGS };
+  }
+
+  private saveGameSettings(settings: GameSettings): void {
+    localStorage.setItem(GAME_SETTINGS_KEY, JSON.stringify(settings));
+  }
+
+  private applySettingsToControls(settings: GameSettings): void {
+    this.gameStartLevel.value = String(settings.startingLevel);
+    this.gameSpeed.value = String(settings.speedMultiplier);
+    this.gameWordSource.value = settings.wordSource;
+  }
+
+  private readGameSettings(): GameSettings {
+    const level = Number(this.gameStartLevel.value);
+    const speed = Number(this.gameSpeed.value);
+    return {
+      startingLevel: Number.isFinite(level) && level >= 1 ? level : 1,
+      speedMultiplier: Number.isFinite(speed) && speed > 0 ? speed : 1,
+      wordSource: this.gameWordSource.value === 'vocab' ? 'vocab' : 'builtin',
+    };
+  }
+
+  private buildGameOptions(settings: GameSettings): GameOptions {
+    return {
+      startingLevel: settings.startingLevel,
+      speedMultiplier: settings.speedMultiplier,
+      wordProvider: settings.wordSource === 'vocab' ? this.makeVocabWordProvider() : undefined,
+    };
+  }
+
+  /** 词库词源提供者：缓存词库单词文本并随机返回；词库为空时返回空串（由游戏回退内置词表） */
+  private makeVocabWordProvider(): () => string {
+    let cache: string[] = [];
+    return () => {
+      if (cache.length === 0) {
+        cache = this.vocabulary.getWords().map((w) => w.text);
+      }
+      if (cache.length === 0) {
+        return '';
+      }
+      return cache[Math.floor(Math.random() * cache.length)];
+    };
   }
 
   private focusGameInput(): void {
@@ -300,10 +420,14 @@ class App {
       this.gameInput.value = '';
     });
 
-    // 防止输入框失去焦点后无法接收输入
+    // 防止输入框失去焦点后无法接收输入（设置控件持有焦点时不抢回，避免打断下拉操作）
     this.gameInput.addEventListener('blur', () => {
       if (this.isGamePanelActive()) {
-        window.setTimeout(() => this.focusGameInput(), 0);
+        window.setTimeout(() => {
+          if (this.isGamePanelActive() && !this.gameControlFocused) {
+            this.focusGameInput();
+          }
+        }, 0);
       }
     });
   }

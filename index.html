@@ -63,6 +63,26 @@
                 <span class="phase-nav"><kbd>Ctrl+←/→</kbd> 切换</span>
               </div>
 
+              <!-- 单词练习词库选择（仅单词练习时显示） -->
+              <div class="train-word-select" id="train-word-select" style="display: none">
+                <div class="word-select-row">
+                  <label>词库分类：</label>
+                  <div class="word-category-list" id="word-category-list">
+                    <!-- 由 JS 按分类动态生成勾选框 -->
+                  </div>
+                </div>
+                <div class="word-select-row">
+                  <label for="word-difficulty-select">难度范围：</label>
+                  <select id="word-difficulty-select">
+                    <option value="all">全部难度</option>
+                    <option value="easy">简单（1-2）</option>
+                    <option value="medium">中等（3）</option>
+                    <option value="hard">困难（4-5）</option>
+                  </select>
+                  <span class="word-select-hint">变更后自动重新取词</span>
+                </div>
+              </div>
+
               <!-- 文章输入区（仅文章练习时显示） -->
               <div class="train-article-input" id="train-article-input" style="display: none">
                 <div class="article-lib">
@@ -167,6 +187,35 @@
             <span>等级：<strong id="level">1</strong></span>
             <span>失误：<strong id="mistakes">0</strong></span>
             <span>准确率：<strong id="accuracy">100%</strong></span>
+          </div>
+          <div class="game-settings">
+            <label for="game-start-level">起始等级：</label>
+            <select id="game-start-level">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+            </select>
+            <label for="game-speed">速度倍率：</label>
+            <select id="game-speed">
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1">1x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x</option>
+            </select>
+            <label for="game-word-source">词源：</label>
+            <select id="game-word-source">
+              <option value="builtin">内置词表</option>
+              <option value="vocab">词库单词</option>
+            </select>
+            <span class="game-settings-hint">设置变更后自动重置游戏</span>
           </div>
           <canvas id="game-canvas" width="800" height="500"></canvas>
           <input id="game-input" type="text" autocomplete="off" aria-label="游戏输入" />

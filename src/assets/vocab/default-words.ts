@@ -1,8 +1,20 @@
 import type { WordEntry, VocabularyCategory } from '../../types.js';
+import { buildEntries } from './word-utils.js';
+import { FREQUENCY_WORDS } from './frequency-words.js';
+import { CET4_WORDS } from './cet4-words.js';
+import { CET6_WORDS } from './cet6-words.js';
 
 export const DEFAULT_CATEGORIES: VocabularyCategory[] = [
   { id: 'daily', name: '日常英语', language: 'en', description: '日常生活常用单词' },
   { id: 'programming', name: '编程术语', language: 'en', description: '编程与计算机常用术语' },
+  {
+    id: 'frequency',
+    name: '通用高频词',
+    language: 'en',
+    description: '英语最高频常用词（精简子集）',
+  },
+  { id: 'cet4', name: '大学英语四级', language: 'en', description: 'CET-4 核心词（精简子集）' },
+  { id: 'cet6', name: '大学英语六级', language: 'en', description: 'CET-6 核心词（精简子集）' },
 ];
 
 export const DEFAULT_WORDS: WordEntry[] = [
@@ -39,4 +51,9 @@ export const DEFAULT_WORDS: WordEntry[] = [
   { id: 'prog-008', text: 'promise', difficulty: 3, category: 'programming', tags: ['keyword'] },
   { id: 'prog-009', text: 'module', difficulty: 3, category: 'programming', tags: ['keyword'] },
   { id: 'prog-010', text: 'typescript', difficulty: 3, category: 'programming', tags: ['keyword'] },
+
+  // 通用高频词 / 四六级核心词（由词形数组按词长映射难度批量构建，id 形如 cet4-0001）
+  ...buildEntries('frequency', FREQUENCY_WORDS),
+  ...buildEntries('cet4', CET4_WORDS),
+  ...buildEntries('cet6', CET6_WORDS),
 ];

@@ -1,4 +1,6 @@
 import type {
+  CharResult,
+  Difficulty,
   DrillPhase,
   Finger,
   PracticeMode,
@@ -24,8 +26,22 @@ import type { ReviewScheduler } from './review.js';
 /** 单词练习每次取词数量 */
 const WORD_COUNT = 20;
 
+/** 单词练习词库选择偏好的 localStorage 键 */
+const WORD_PREF_KEY = 'typeprime_word_practice_pref';
+
+/** 单词练习取词偏好：分类多选 + 难度范围 */
+interface WordPracticePref {
+  /** 勾选的分类 id（空数组表示不过滤，取全部词库） */
+  categories: string[];
+  /** 难度范围：all / easy(1-2) / medium(3) / hard(4-5) */
+  difficulty: string;
+}
+
 /** 键盘参考区按键按下的反馈时长（毫秒） */
 const MINI_PRESS_MS = 80;
+
+/** 键盘参考区错误按键的红色闪烁时长（毫秒，长于普通按下以强调错误） */
+const MINI_ERROR_MS = 320;
 
 // ---------------------------------------------------------------------------
 // 字符 -> KeyboardEvent.code 映射
@@ -312,6 +328,8 @@ class MiniKeyboardCanvas {
   private layerCodes = new Set<string>();
   private pressedCode: string | null = null;
   private pressTimer: number | null = null;
+  private errorCode: string | null = null;
+  private errorTimer: number | null = null;
 
   constructor(canvas: HTMLCanvasElement | null) {
     if (!canvas) {
@@ -348,10 +366,35 @@ class MiniKeyboardCanvas {
     }, MINI_PRESS_MS);
   }
 
+  /** 错误按键反馈：红色闪烁该键（时长长于普通按下），与 press 互斥且优先 */
+  pressError(code: string): void {
+    if (!this.ctx) {
+      return;
+    }
+    this.errorCode = code;
+    this.pressedCode = null;
+    if (this.pressTimer !== null) {
+      window.clearTimeout(this.pressTimer);
+      this.pressTimer = null;
+    }
+    this.draw();
+    if (this.errorTimer !== null) {
+      window.clearTimeout(this.errorTimer);
+    }
+    this.errorTimer = window.setTimeout(() => {
+      this.errorCode = null;
+      this.draw();
+    }, MINI_ERROR_MS);
+  }
+
   dispose(): void {
     if (this.pressTimer !== null) {
       window.clearTimeout(this.pressTimer);
       this.pressTimer = null;
+    }
+    if (this.errorTimer !== null) {
+      window.clearTimeout(this.errorTimer);
+      this.errorTimer = null;
     }
   }
 
@@ -387,12 +430,15 @@ class MiniKeyboardCanvas {
     y: number,
     w: number
   ): void {
-    const isPressed = this.pressedCode === key.code;
-    const isHint = !isPressed && this.hintCode === key.code;
-    const isLayer = !isPressed && !isHint && this.layerCodes.has(key.code);
+    const isError = this.errorCode === key.code;
+    const isPressed = !isError && this.pressedCode === key.code;
+    const isHint = !isPressed && !isError && this.hintCode === key.code;
+    const isLayer = !isPressed && !isError && !isHint && this.layerCodes.has(key.code);
 
     ctx.save();
-    if (isPressed) {
+    if (isError) {
+      ctx.fillStyle = '#f43f5e';
+    } else if (isPressed) {
       ctx.fillStyle = '#38bdf8';
     } else if (isHint) {
       ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
@@ -402,7 +448,12 @@ class MiniKeyboardCanvas {
       ctx.fillStyle = HAND_FILL[key.hand];
     }
 
-    if (isHint || isPressed) {
+    if (isError) {
+      ctx.strokeStyle = '#f43f5e';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = '#f43f5e';
+      ctx.shadowBlur = 12;
+    } else if (isHint || isPressed) {
       ctx.strokeStyle = '#38bdf8';
       ctx.lineWidth = 2;
       if (isHint) {
@@ -555,6 +606,9 @@ export class TrainPanel {
   private articleSelect!: HTMLSelectElement;
   private articleRandomBtn!: HTMLButtonElement;
   private articleSeqBtn!: HTMLButtonElement;
+  private wordSelectWrap!: HTMLElement;
+  private wordCategoryList!: HTMLElement;
+  private wordDifficultySelect!: HTMLSelectElement;
   private textTarget!: HTMLElement;
   private textInput!: HTMLElement;
   private statWpm!: HTMLElement;
@@ -581,6 +635,8 @@ export class TrainPanel {
   private phaseIndex = 0;
   /** 当前加载的预装文章在 PRESET_ARTICLES 中的索引；-1 表示用户粘贴的自定义文章 */
   private articleIndex = -1;
+  /** 单词练习取词偏好（分类多选 + 难度范围），持久化到 localStorage */
+  private wordPref: WordPracticePref = { categories: [], difficulty: 'all' };
   private pendingText = '';
   private sessionStartedAt: number | null = null;
   /** 当前单词类练习涉及的单词 ID 与文本（练习完成后回写掌握度与复习调度） */
@@ -591,6 +647,8 @@ export class TrainPanel {
   private readonly targetSpans: HTMLSpanElement[] = [];
   private readonly inputSpans: HTMLSpanElement[] = [];
   private renderedTargetText = '';
+  /** 刚敲错的输入行位置（原始下标），用于在下次渲染时对该 span 施加一次性 shake 动画 */
+  private pendingShakeIndex: number | null = null;
 
   constructor(deps: TrainPanelDeps) {
     this.deps = deps;
@@ -603,6 +661,7 @@ export class TrainPanel {
     this.registerEngineCallbacks();
     this.initLevelSelector();
     this.initArticleSelector();
+    this.initWordSelector();
     this.updatePhaseIndicator();
     this.preparePreview();
   }
@@ -679,6 +738,9 @@ export class TrainPanel {
     this.articleSelect = requireEl<HTMLSelectElement>('article-select');
     this.articleRandomBtn = requireEl<HTMLButtonElement>('article-random-btn');
     this.articleSeqBtn = requireEl<HTMLButtonElement>('article-seq-btn');
+    this.wordSelectWrap = requireEl<HTMLElement>('train-word-select');
+    this.wordCategoryList = requireEl<HTMLElement>('word-category-list');
+    this.wordDifficultySelect = requireEl<HTMLSelectElement>('word-difficulty-select');
     this.textTarget = requireEl<HTMLElement>('text-target');
     this.textInput = requireEl<HTMLElement>('text-input');
     this.statWpm = requireEl<HTMLElement>('stat-wpm');
@@ -747,6 +809,11 @@ export class TrainPanel {
   private registerEngineCallbacks(): void {
     this.trainEngine.onProgress((p) => this.handleProgress(p));
     this.trainEngine.onComplete((p) => this.handleComplete(p));
+    // 记录刚敲错的位置：onMistake 在字符写入后、自动跳行前触发，
+    // 此刻 userInput 末尾即错误字符，其下标用于下次 syncInputSpans 施加 shake。
+    this.trainEngine.onMistake(() => {
+      this.pendingShakeIndex = this.trainEngine.getUserInput().length - 1;
+    });
   }
 
   private initLevelSelector(): void {
@@ -800,6 +867,7 @@ export class TrainPanel {
     });
     this.levelSelectWrap.style.display = mode === 'key-drill' ? '' : 'none';
     this.phaseWrap.style.display = mode === 'key-drill' ? '' : 'none';
+    this.wordSelectWrap.style.display = mode === 'word' ? '' : 'none';
     this.articleWrap.style.display = mode === 'article' ? '' : 'none';
     this.resetPractice();
   }
@@ -884,6 +952,99 @@ export class TrainPanel {
       .trim();
   }
 
+  /** 构建单词练习的分类勾选框与难度下拉，并恢复上次选择 */
+  private initWordSelector(): void {
+    const categories = this.deps.vocabulary.getCategories();
+    const saved = this.loadWordPref();
+    // 无存档时默认全选，等价于不按分类过滤（兼容既有「从全部词库取词」行为）
+    this.wordPref = saved ?? { categories: categories.map((c) => c.id), difficulty: 'all' };
+
+    this.wordCategoryList.innerHTML = '';
+    for (const cat of categories) {
+      const label = document.createElement('label');
+      label.className = 'word-category-item';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = cat.id;
+      checkbox.checked = this.wordPref.categories.includes(cat.id);
+      checkbox.addEventListener(
+        'change',
+        () => this.handleWordCategoryToggle(cat.id, checkbox.checked),
+        { signal: this.abort.signal }
+      );
+      const text = document.createElement('span');
+      text.textContent = cat.name;
+      label.append(checkbox, text);
+      this.wordCategoryList.appendChild(label);
+    }
+
+    this.wordDifficultySelect.value = this.wordPref.difficulty;
+    this.wordDifficultySelect.addEventListener('change', () => this.handleWordDifficultyChange(), {
+      signal: this.abort.signal,
+    });
+  }
+
+  /** 勾选/取消某个分类后持久化偏好并重新取词 */
+  private handleWordCategoryToggle(id: string, checked: boolean): void {
+    const set = new Set(this.wordPref.categories);
+    if (checked) {
+      set.add(id);
+    } else {
+      set.delete(id);
+    }
+    this.wordPref.categories = [...set];
+    this.saveWordPref();
+    this.resetPractice();
+  }
+
+  /** 切换难度范围后持久化偏好并重新取词 */
+  private handleWordDifficultyChange(): void {
+    this.wordPref.difficulty = this.wordDifficultySelect.value;
+    this.saveWordPref();
+    this.resetPractice();
+  }
+
+  /** 把难度范围选项映射为 getWords 的 difficulties 过滤（all 返回 undefined 不过滤） */
+  private difficultyFilter(): Difficulty[] | undefined {
+    switch (this.wordPref.difficulty) {
+      case 'easy':
+        return [1, 2];
+      case 'medium':
+        return [3];
+      case 'hard':
+        return [4, 5];
+      default:
+        return undefined;
+    }
+  }
+
+  private loadWordPref(): WordPracticePref | null {
+    try {
+      const raw = localStorage.getItem(WORD_PREF_KEY);
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw) as WordPracticePref;
+      if (!parsed || !Array.isArray(parsed.categories)) {
+        return null;
+      }
+      return {
+        categories: parsed.categories.filter((c) => typeof c === 'string'),
+        difficulty: typeof parsed.difficulty === 'string' ? parsed.difficulty : 'all',
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private saveWordPref(): void {
+    try {
+      localStorage.setItem(WORD_PREF_KEY, JSON.stringify(this.wordPref));
+    } catch {
+      // ignore
+    }
+  }
+
   /** 按当前模式生成目标文本并渲染预览（不进入计分状态） */
   private preparePreview(): void {
     this.activeWordIds = [];
@@ -897,7 +1058,11 @@ export class TrainPanel {
         break;
       }
       case 'word': {
-        const words = this.deps.vocabulary.getWords({ limit: WORD_COUNT });
+        const words = this.deps.vocabulary.getWords({
+          categories: this.wordPref.categories,
+          difficulties: this.difficultyFilter(),
+          limit: WORD_COUNT,
+        });
         this.activeWordIds = words.map((w) => w.id);
         this.activeWordTexts = words.map((w) => w.text);
         this.pendingText = this.trainEngine.generateWordPractice(this.activeWordTexts);
@@ -921,7 +1086,7 @@ export class TrainPanel {
 
   private renderPreview(text: string): void {
     this.syncTargetSpans(text);
-    this.updateTargetStates(0);
+    this.updateTargetStates(0, []);
     this.clearInputDisplay();
     this.updateStatsDisplay(0, 0, 0, 0, countTypeable(text));
     this.updateHint(text.length > 0 ? text[0] : null);
@@ -1029,12 +1194,19 @@ export class TrainPanel {
       return;
     }
 
-    // 字符按键反馈（键盘动画）
+    // 字符按键反馈（键盘动画）：先判定该字符在当前目标位是否为错，
+    // 错误则红色闪烁该键（pressError），正确则维持普通按下反馈（press）。
     if (event.type === 'char' && event.char) {
       const code = charToCode(event.char);
       if (code) {
+        const nextChar = this.trainEngine.getNextChar();
+        const isError = nextChar !== null && event.char !== nextChar;
         this.deps.keyboard?.pressKey(code);
-        this.miniKeyboard.press(code);
+        if (isError) {
+          this.miniKeyboard.pressError(code);
+        } else {
+          this.miniKeyboard.press(code);
+        }
       }
     }
 
@@ -1102,7 +1274,7 @@ export class TrainPanel {
 
   private handleProgress(p: TrainProgress): void {
     this.syncTargetSpans(this.trainEngine.getTargetText());
-    this.updateTargetStates(p.completed);
+    this.updateTargetStates(p.completed, this.trainEngine.getCharResults());
     this.syncInputSpans();
     const accuracy = p.completed > 0 ? (p.correct / p.completed) * 100 : 0;
     this.updateStatsDisplay(p.wpm, p.cpm, accuracy, p.completed, p.total);
@@ -1205,8 +1377,12 @@ export class TrainPanel {
     }
   }
 
-  /** 更新目标行类名：已输入 .typed、当前位置 .current（换行符保留 .newline） */
-  private updateTargetStates(completed: number): void {
+  /**
+   * 更新目标行类名：已输入 .typed、当前位置 .current（换行符保留 .newline）。
+   * 另根据逐字符比对结果，在错误位置（correct === false）追加 .error：
+   * 标准文本行的正确字符在错误处标红加粗，提示用户此处应输入的正确字符。
+   */
+  private updateTargetStates(completed: number, results: CharResult[]): void {
     const total = this.targetSpans.length;
     for (let i = 0; i < total; i++) {
       let cls = this.targetSpans[i].classList.contains('newline') ? 'char newline' : 'char';
@@ -1215,6 +1391,9 @@ export class TrainPanel {
       }
       if (i === completed && completed < total) {
         cls += ' current';
+      }
+      if (results[i]?.correct === false) {
+        cls += ' error';
       }
       const span = this.targetSpans[i];
       if (span.className !== cls) {
@@ -1245,7 +1424,10 @@ export class TrainPanel {
         continue;
       }
       const isNewline = result.expected === '\n';
-      const text = displayChar(result.actual ?? '');
+      const isIncorrect = result.correct === false;
+      // 错误字符回显用户真实敲入的字符；错误空格用可见符号 ␣，避免红底药丸内空白不可辨
+      const actual = result.actual ?? '';
+      const text = isIncorrect && actual === ' ' ? '␣' : displayChar(actual);
       if (span.textContent !== text) {
         span.textContent = text;
       }
@@ -1259,6 +1441,25 @@ export class TrainPanel {
         span.className = cls;
       }
     }
+
+    this.applyPendingShake();
+  }
+
+  /** 对刚敲错的输入 span 施加一次性 shake 动画（动画结束自动移除） */
+  private applyPendingShake(): void {
+    if (this.pendingShakeIndex === null) {
+      return;
+    }
+    const span = this.inputSpans[this.pendingShakeIndex];
+    this.pendingShakeIndex = null;
+    if (!span) {
+      return;
+    }
+    span.classList.remove('shake');
+    // 强制 reflow 以重启动画（连续错误时也能重新触发）
+    void span.offsetWidth;
+    span.classList.add('shake');
+    span.addEventListener('animationend', () => span.classList.remove('shake'), { once: true });
   }
 
   private clearInputDisplay(): void {
@@ -1356,9 +1557,17 @@ export class TrainPanel {
   // -------------------------------------------------------------------------
 
   private showResultModal(p: TrainProgress, durationMs: number, accuracy: number): void {
-    const counts = new Map<string, number>();
+    // 按「应为字符 + 实际敲入字符」配对聚合错误次数
+    const counts = new Map<string, { expected: string; actual: string; count: number }>();
     for (const error of p.errors) {
-      counts.set(error.expected, (counts.get(error.expected) ?? 0) + 1);
+      const actual = error.actual ?? '';
+      const key = `${error.expected}\u0000${actual}`;
+      const existing = counts.get(key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        counts.set(key, { expected: error.expected, actual, count: 1 });
+      }
     }
 
     this.resultStats.innerHTML = [
@@ -1371,11 +1580,12 @@ export class TrainPanel {
     if (counts.size === 0) {
       this.resultErrors.innerHTML = '<div>零错误，太棒了！继续保持。</div>';
     } else {
-      const items = [...counts.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([char, count]) => {
-          const display = char === ' ' ? '␣' : escapeHtml(char);
-          return `<div>「${display}」输错 ${count} 次</div>`;
+      const items = [...counts.values()]
+        .sort((a, b) => b.count - a.count)
+        .map(({ expected, actual, count }) => {
+          const expDisplay = expected === ' ' ? '␣' : escapeHtml(expected);
+          const actDisplay = actual === ' ' ? '␣' : escapeHtml(actual);
+          return `<div>应为 <span class="err-exp">${expDisplay}</span>，你敲了 <span class="err-act">${actDisplay}</span>（${count} 次）</div>`;
         });
       this.resultErrors.innerHTML = items.join('');
     }

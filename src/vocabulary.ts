@@ -2,7 +2,7 @@ import type { WordEntry, VocabularyCategory, Difficulty } from './types.js';
 import { DEFAULT_CATEGORIES, DEFAULT_WORDS } from './assets/vocab/default-words.js';
 
 const STORAGE_KEY = 'typeprime_vocabulary';
-const DATA_VERSION = 1;
+const DATA_VERSION = 2;
 
 interface VocabularyData {
   version: number;
@@ -43,6 +43,12 @@ export class VocabularyBank {
         if (parsed.version === DATA_VERSION) {
           return parsed;
         }
+        // 旧版本数据：迁移而非丢弃，保留用户已有分类与自定义单词
+        if (parsed && Array.isArray(parsed.categories) && Array.isArray(parsed.words)) {
+          const migrated = this.migrate(parsed);
+          this.save(migrated);
+          return migrated;
+        }
       }
     } catch {
       // ignore
@@ -55,6 +61,30 @@ export class VocabularyBank {
     };
     this.save(initial);
     return initial;
+  }
+
+  /**
+   * 将旧版本词库数据迁移到当前版本（DATA_VERSION）。
+   *
+   * 以用户已有数据为基底，按 id 合并新增的默认分类与默认词：
+   * - 不覆盖用户已存在的同 id 项（保留用户自定义内容）；
+   * - 不丢失用户自定义分类与单词；
+   * - 仅补齐新版本新增的默认项（如 frequency/cet4/cet6 分类及其词条）。
+   */
+  private migrate(old: VocabularyData): VocabularyData {
+    const categories = [...old.categories];
+    for (const category of DEFAULT_CATEGORIES) {
+      if (!categories.some((c) => c.id === category.id)) {
+        categories.push(category);
+      }
+    }
+    const words = [...old.words];
+    for (const word of DEFAULT_WORDS) {
+      if (!words.some((w) => w.id === word.id)) {
+        words.push(word);
+      }
+    }
+    return { version: DATA_VERSION, categories, words };
   }
 
   private save(data: VocabularyData): void {

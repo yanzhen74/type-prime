@@ -192,6 +192,39 @@ body {
   color: var(--accent);
 }
 
+/* 游戏难度设置行：起始等级 / 速度倍率 / 词源 */
+.game-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.game-settings label {
+  color: var(--muted);
+}
+
+.game-settings select {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.game-settings-hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
 #game-canvas {
   display: block;
   width: 100%;
@@ -480,6 +513,60 @@ th {
   font-size: 0.9rem;
 }
 
+.train-word-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.word-select-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.word-select-row > label {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.word-category-list {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+  flex-wrap: wrap;
+}
+
+.word-category-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.word-category-item input[type='checkbox'] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.word-select-row select {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.word-select-hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
 .train-article-input {
   display: flex;
   flex-direction: column;
@@ -545,6 +632,15 @@ th {
   border-bottom: 2px solid var(--accent);
 }
 
+/* 标准文本行：错误位置的正确字符标红加粗（提示“此处应输入这个字符”） */
+.text-target .char.error {
+  opacity: 1;
+  color: var(--danger);
+  font-weight: 700;
+  background: rgba(244, 63, 94, 0.15);
+  border-radius: 3px;
+}
+
 .text-input {
   min-height: 1.5em;
   letter-spacing: 0.05em;
@@ -562,9 +658,34 @@ th {
 }
 
 .text-input .char.incorrect {
-  color: var(--danger);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* 错误发生瞬间的一次性抖动动画 */
+.text-input .char.shake {
+  animation: shake 0.3s ease;
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-3px);
+  }
+  40% {
+    transform: translateX(3px);
+  }
+  60% {
+    transform: translateX(-2px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
 }
 
 /* 文章换行符：输入时自动跳过，仅保留视觉换行，字符本身不可见 */
@@ -843,6 +964,21 @@ th {
   overflow-y: auto;
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+.result-errors > div {
+  padding: 0.15rem 0;
+}
+
+/* 错误配对明细：“应为”正确字符绿、“你敲了”错误字符红 */
+.result-errors .err-exp {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.result-errors .err-act {
+  color: var(--danger);
+  font-weight: 700;
 }
 
 /* 快捷键提示标签 */

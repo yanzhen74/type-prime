@@ -24,6 +24,8 @@ export interface GameState {
   lockedWordIndex: number | null;
   mistakes: number;
   countdown: number;
+  /** 最近一次错误输入（字符 + 时间戳），用于短时红色闪烁/shake 反馈；超时后不再渲染 */
+  lastError?: { char: string; at: number };
 }
 
 export type Finger = 'pinky' | 'ring' | 'middle' | 'index' | 'thumb' | 'unknown';
@@ -49,6 +51,16 @@ export interface VocabularyCategory {
   name: string;
   language: string;
   description?: string;
+  /**
+   * 父分类 id，用于构建「版本 → 册 → 课」层级树。
+   * 顶层分类留空；当前仅预留结构，暂不填充课本层级数据。
+   */
+  parent?: string;
+  /**
+   * 课本层级元信息（版本/年级册次/课次），为未来「版本→册→课」级联选择预留。
+   * 当前不填充数据，避免日后调整数据模型。
+   */
+  meta?: { version?: string; grade?: string; lesson?: string };
 }
 
 export interface ReviewState {
