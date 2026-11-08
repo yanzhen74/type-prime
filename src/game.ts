@@ -82,6 +82,11 @@ export class FallingWordGame {
     this.onUpdate(this.state);
   }
 
+  /** 游戏是否正在运行（含倒计时和暂停状态） */
+  isRunning(): boolean {
+    return this.state.isRunning;
+  }
+
   private runCountdown(): void {
     if (this.state.countdown > 0) {
       this.draw();
@@ -345,7 +350,7 @@ export class FallingWordGame {
       ctx.fillText('PAUSED', width / 2, height / 2);
       ctx.fillStyle = '#f8fafc';
       ctx.font = '20px sans-serif';
-      ctx.fillText('按 Esc 或点击暂停按钮继续', width / 2, height / 2 + 40);
+      ctx.fillText('按 Ctrl+P 继续', width / 2, height / 2 + 40);
     }
 
     if (!this.state.isRunning && this.state.lives <= 0) {

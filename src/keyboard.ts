@@ -250,6 +250,53 @@ export class KeyboardRenderer {
     }
   }
 
+  /** 提示下一个应输入的键，先清除上一个提示，同时高亮对应手指 */
+  hintNext(code: string): void {
+    this.clearHint();
+    const el = this.keyElements.get(code);
+    el?.classList.add('key--hint');
+    const key = CODE_MAP.get(code);
+    if (key) {
+      const fingerEl = this.fingerElements.get(`${key.hand}:${key.finger}`);
+      fingerEl?.classList.add('finger--hint');
+    }
+  }
+
+  /** 清除所有键上的「下一个输入键」提示及手指高亮 */
+  clearHint(): void {
+    for (const el of this.keyElements.values()) {
+      el.classList.remove('key--hint');
+    }
+    for (const el of this.fingerElements.values()) {
+      el.classList.remove('finger--hint');
+    }
+  }
+
+  /** 高亮一组键位（如当前练习层级涉及的键），先清除上一次层级高亮 */
+  highlightLayer(keys: string[]): void {
+    this.clearLayer();
+    for (const code of keys) {
+      this.keyElements.get(code)?.classList.add('key--layer');
+    }
+  }
+
+  /** 清除所有键上的层级高亮 */
+  clearLayer(): void {
+    for (const el of this.keyElements.values()) {
+      el.classList.remove('key--layer');
+    }
+  }
+
+  /** 模拟按键按下反馈：添加 pressed 类，80ms 后自动移除 */
+  pressKey(code: string): void {
+    const el = this.keyElements.get(code);
+    if (!el) return;
+    el.classList.add('key--pressed');
+    window.setTimeout(() => {
+      el.classList.remove('key--pressed');
+    }, 80);
+  }
+
   private fingerName(finger: Finger): string {
     const map: Record<Finger, string> = {
       pinky: '小指',

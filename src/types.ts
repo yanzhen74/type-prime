@@ -110,3 +110,41 @@ export interface UserProgressData extends User {
   wordStats: Record<string, WordStats>;
   sessions: (TrainingSession | GameSession)[];
 }
+
+/** 练习层级定义 */
+export interface TrainingLevel {
+  id: string;
+  name: string;
+  keys: string[]; // 该层级涉及的键位（小写字母或符号字符）
+  description: string;
+}
+
+/** 练习模式 */
+export type PracticeMode = 'key-drill' | 'word' | 'article';
+
+/**
+ * 键位练习阶段（由浅入深递进）。
+ *
+ * - `single-repeat`：单键重复，先建立键位与手指的对应关系
+ * - `pair-combo`：相邻双键组合，练习手指之间的切换
+ * - `random-mix`：随机混合，综合巩固
+ */
+export type DrillPhase = 'single-repeat' | 'pair-combo' | 'random-mix';
+
+/** 逐字符比对结果 */
+export interface CharResult {
+  expected: string;
+  actual: string | null; // null = 尚未输入
+  correct: boolean | null; // null = 尚未输入
+  timestamp?: number;
+}
+
+/** 练习进度事件 */
+export interface TrainProgress {
+  total: number;
+  completed: number;
+  correct: number;
+  wpm: number;
+  cpm: number;
+  errors: CharResult[];
+}

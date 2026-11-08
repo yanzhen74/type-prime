@@ -109,51 +109,56 @@ type-prime 是一个基于 TypeScript + HTML5 Canvas 的浏览器端打字练习
 
 ---
 
-## 4. 后续计划：块一（指法训练与输入练习）
+## 4. 块一：指法训练与输入练习（已完成）
 
-根据 [`PLAN.md`](./PLAN.md) 实施主线安排，下一步重点实现第一块“指法训练与输入练习”的完整功能，具体任务如下：
+块一已交付并通过本地验证（`npm run lint && npm test && npm run build` 全绿）：
 
-### 4.1 键盘渲染增强
-
-- 为 `KeyboardRenderer` 添加键帽按下/弹起动画。
-- 新增 `hintNext(code)` 方法，在练习中高亮“下一个应输入键”。
-- 保持现有 `highlight(code)` 与手指图高亮能力不变。
-
-### 4.2 练习引擎
-
-- 新建 `TrainEngine`：
-  - 生成随机键位、随机单词、文章文本序列。
-  - 接收 `TypingEngine` 输入事件，逐字符比对标准文本与用户输入。
-  - 记录正确率、WPM、CPM、错误键位/单词。
-  - 派发 `onProgress`、`onMistake`、`onComplete` 事件。
-
-### 4.3 练习面板 UI
-
-- 在 `index.html` 中扩展“指法训练”面板，包含三个子标签：
-  - **自由训练**：随意按键，系统实时反馈键位与手指。
-  - **键位练习**：系统逐个提示字符，用户跟随输入。
-  - **文章练习**：加载文章或用户导入文本，逐字跟打。
-- 显示练习文本、已输入/待输入高亮、下一键提示、实时统计与结果弹窗。
-
-### 4.4 数据打通
-
-- 练习结果写入 `UserProgress`：
-  - `recordKeyResult` 记录键位正误。
-  - `recordWordResult` 记录单词正误与掌握度。
-  - `recordSession` 保存一次练习会话的 WPM/CPM/准确率。
-- 错误键位/单词用于生成易错内容，供后续复习与强化练习。
-
-### 4.5 验收标准
-
-- [ ] 三种训练模式均可在页面上切换使用。
-- [ ] 键盘实时高亮当前按键与下一键提示。
-- [ ] 标准文本与用户输入逐字符对比显示，错误有视觉反馈。
-- [ ] 练习结束后展示正确率、WPM、CPM、错误键位分布。
-- [ ] 新增/扩展单元测试通过，`npm run lint && npm run test && npm run build` 全绿。
+- `src/train-engine.ts`：`TRAINING_LEVELS` 8 层级 + 三阶段（单键重复 / 双键组合 / 随机混合）序列生成，逐字符比对与 WPM/CPM/准确率统计。
+- `src/train-panel.ts`：`TrainPanel` 控制器 + `MiniKeyboardCanvas` 缩略键盘 + `MiniHandsDiagram` 手指示意；键位 / 单词 / 文章三种练习模式；双行对照逐字符着色纠错；下一键预判高亮；结果弹窗；长文视窗滚动跟随。
+- `src/keyboard.ts`：DOM 键盘新增 `hintNext/clearHint/highlightLayer/clearLayer/pressKey`，并区分左右手底色与手指高亮。
+- `src/main.ts`：集成 `TypingEngine` + `TrainPanel`，全键盘快捷键（`Ctrl+1/2/3/4` 面板、`Ctrl+Shift+1/2/3` 子标签、`Ctrl+↑↓` 层级、`Ctrl+←/→` 阶段、`F1` 帮助、`Enter`/`Esc` 等）。
 
 ---
 
-## 5. 当前阻塞与注意事项
+## 5. 块二：单词记忆与词库管理（已完成）
+
+块二已交付并通过本地验证（6 个测试文件、73 个用例全部通过）：
+
+- `src/vocab-panel.ts`（新增）：`VocabPanel` 词库管理面板控制器，通过 deps 注入消费 `VocabularyBank` / `ReviewScheduler` / `UserProgress`。
+  - 分类筛选、搜索、单词列表（单词 / 释义 / 分类 / 难度 / 掌握度徽章 / 下次复习 / 操作）。
+  - 单词添加 / 编辑 / 删除（表单 + 行内按钮）。
+  - 词库 JSON 导入 / 导出。
+  - 「今日复习」入口：取 `ReviewScheduler` 到期队列并回调 `main.ts` 切换到训练面板开始复习练习。
+- `src/train-panel.ts`：新增 `startReview(wordIds)` 复习练习模式；单词 / 复习练习完成后按单词粒度回写 `UserProgress.recordWordResult` 与 `ReviewScheduler.recordResult`，形成记忆曲线闭环。
+- `src/review.ts`：修复 `nextState` 丢失 `wordId` 的问题；新增 `getDueCount()`。
+- `src/main.ts`：接线 `ReviewScheduler` 与 `VocabPanel`，新增「词库」面板路由（`Ctrl+3`），排行榜顺延为 `Ctrl+4`；用户切换时刷新词库面板。
+- `index.html` / `style.css`：新增 `#panel-vocab` 结构、词库 tab、帮助与底部快捷键提示；掌握度徽章与词库面板样式。
+- `src/vocab-panel.test.ts`（新增）：9 个用例覆盖渲染、分类 / 搜索过滤、增删、复习计数与回调、掌握度徽章。
+
+### 5.1 验收标准（已达成）
+
+- [x] 词库面板可分类筛选、搜索、增删改单词并导入导出 JSON。
+- [x] 掌握度（未学 / 学习中 / 复习中 / 已掌握）可视化。
+- [x] 「今日复习」按 SM-2 到期队列生成并可一键开始复习练习。
+- [x] 单词 / 复习练习完成后回写掌握度与复习间隔，形成记忆闭环。
+- [x] `npm run lint && npm test && npm run build` 全绿。
+
+---
+
+## 6. 后续计划：块三（指法游戏）
+
+下一步实现第三块「指法游戏」（闯关射击 + 僵尸大战，二者同属游戏类），具体任务：
+
+1. 新建 `src/game-engine.ts`：提取通用游戏循环、状态管理、暂停 / 恢复与 `TypingEngine` 输入接入。
+2. 新建 `src/typing-shooter-game.ts`（`TypingShooterGame`）：目标从单字母 → 字母组合 → 单词 → 短语逐级；连击、关卡推进、BOSS、结算页。
+3. 新建 `src/zombie-typing-game.ts`（`ZombieTypingGame`）：波次系统、基地血量、普通 / 快速 / 坦克 / BOSS 僵尸、道具、结算页；复用 `FallingWordGame` 的目标锁定与单词进度逻辑。
+4. 表现层打磨：`src/sound-manager.ts`、`src/particle-system.ts`、主题与 Canvas 分层渲染。
+5. 测试：游戏引擎状态机、输入匹配、关卡 / 波次与结算测试。
+
+---
+
+## 7. 当前阻塞与注意事项
 
 - 无阻塞项。
-- 注意：细部 UI/交互需求（如具体配色、动画时长、音效选择）尚未最终确认，第二阶段实现时可先用默认方案占位，后续根据用户反馈调整。
+- 内置词库目前仅 `daily` / `programming` 两组默认词库；PLAN.md 第 11 节规划的中小学、四六级等词库 JSON 尚未落地，后续按版权合规要求补充。
+- 细部 UI/交互（配色、动画时长、音效）仍可据用户反馈微调。

@@ -87,7 +87,7 @@ export class TypingEngine {
     const target = e.target as HTMLElement | null;
     if (target && target !== this.input) {
       const tag = target.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || target.isContentEditable) {
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable) {
         // 不拦截其他输入框的快捷键
         return;
       }

@@ -13,24 +13,150 @@
         <div class="user-section">
           <label for="user-select">当前用户：</label>
           <select id="user-select"></select>
+          <kbd>Ctrl+Shift+U</kbd>
           <button id="btn-add-user">添加用户</button>
         </div>
       </header>
 
       <nav class="tabs">
-        <button class="tab-btn active" data-tab="train">指法训练</button>
-        <button class="tab-btn" data-tab="game">单词掉落</button>
-        <button class="tab-btn" data-tab="rank">排行榜</button>
+        <button class="tab-btn active" data-tab="train">指法训练 <kbd>Ctrl+1</kbd></button>
+        <button class="tab-btn" data-tab="game">单词掉落 <kbd>Ctrl+2</kbd></button>
+        <button class="tab-btn" data-tab="vocab">词库 <kbd>Ctrl+3</kbd></button>
+        <button class="tab-btn" data-tab="rank">排行榜 <kbd>Ctrl+4</kbd></button>
       </nav>
 
       <main>
         <!-- 指法训练面板 -->
         <section id="panel-train" class="panel active">
-          <h2>标准指法训练</h2>
-          <p>按下键盘任意键，屏幕会高亮对应键位、推荐手指与左右手分工。</p>
-          <div id="keyboard-container"></div>
-          <div id="finger-hint">请按任意键开始...</div>
-          <div id="hands-diagram"></div>
+          <!-- 子标签导航 -->
+          <div class="train-header">
+            <div class="train-tabs">
+              <button class="train-tab-btn active" data-train-tab="key-drill">
+                键位练习 <kbd>Ctrl+Shift+1</kbd>
+              </button>
+              <button class="train-tab-btn" data-train-tab="word">
+                单词练习 <kbd>Ctrl+Shift+2</kbd>
+              </button>
+              <button class="train-tab-btn" data-train-tab="article">
+                文章练习 <kbd>Ctrl+Shift+3</kbd>
+              </button>
+            </div>
+          </div>
+
+          <!-- 主区域 -->
+          <div class="train-main">
+            <!-- 左侧/中间内容区 -->
+            <div class="train-content">
+              <!-- 层级选择（仅键位练习时显示） -->
+              <div class="train-level-select" id="train-level-select">
+                <label>练习层级：</label>
+                <select id="level-selector">
+                  <!-- 由 JS 动态填充 -->
+                </select>
+                <span class="level-hint"><kbd>Ctrl+↑↓</kbd> 切换</span>
+              </div>
+
+              <!-- 练习阶段选择（仅键位练习时显示） -->
+              <div class="train-phase-select" id="train-phase-select">
+                <label>练习阶段：</label>
+                <span class="phase-indicator" id="phase-indicator">单键重复（1/3）</span>
+                <span class="phase-nav"><kbd>Ctrl+←/→</kbd> 切换</span>
+              </div>
+
+              <!-- 文章输入区（仅文章练习时显示） -->
+              <div class="train-article-input" id="train-article-input" style="display: none">
+                <div class="article-lib">
+                  <label for="article-select">预装文章：</label>
+                  <select id="article-select">
+                    <!-- 由 JS 按难度分组动态填充 -->
+                  </select>
+                  <button id="article-random-btn" class="btn">随机加载</button>
+                  <button id="article-seq-btn" class="btn" title="按由浅入深顺序加载下一篇">
+                    由浅入深
+                  </button>
+                </div>
+                <textarea
+                  id="article-textarea"
+                  placeholder="在此粘贴文章内容，或从上方选择/随机加载预装文章..."
+                  rows="4"
+                ></textarea>
+                <div class="article-load-row">
+                  <button id="article-load-btn" class="btn btn-accent">加载文章</button>
+                  <span class="article-hint">加载后点击「开始练习」或按 <kbd>Enter</kbd></span>
+                </div>
+              </div>
+
+              <!-- 状态指示器 -->
+              <div class="train-status" id="train-status">
+                <span class="status-badge idle" id="train-status-badge">等待开始</span>
+              </div>
+
+              <!-- 双行对照文本区 -->
+              <div class="train-text-display" id="train-text-display">
+                <div class="text-target" id="text-target">
+                  <!-- 标准文本，由 JS 填充 span 元素 -->
+                </div>
+                <div class="text-input" id="text-input">
+                  <!-- 用户输入，由 JS 填充 span 元素 -->
+                </div>
+              </div>
+
+              <!-- 实时统计栏 -->
+              <div class="train-stats" id="train-stats">
+                <div class="stat-item">
+                  <span class="stat-label">WPM</span>
+                  <span class="stat-value" id="stat-wpm">0</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">CPM</span>
+                  <span class="stat-value" id="stat-cpm">0</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">正确率</span>
+                  <span class="stat-value" id="stat-accuracy">0%</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">进度</span>
+                  <span class="stat-value" id="stat-progress">0/0</span>
+                </div>
+              </div>
+
+              <!-- 控制按钮 -->
+              <div class="train-controls">
+                <button id="train-start-btn" class="btn btn-accent">
+                  开始练习 <kbd>Enter</kbd>
+                </button>
+                <button id="train-reset-btn" class="btn">重置 <kbd>Esc</kbd></button>
+                <button id="train-next-btn" class="btn" style="display: none">
+                  下一关 <kbd>Enter</kbd>
+                </button>
+              </div>
+            </div>
+
+            <!-- 右下角键盘参考区 -->
+            <div class="train-keyboard" id="train-keyboard">
+              <canvas id="keyboard-ref"></canvas>
+              <div class="mini-hands-diagram" id="mini-hands-diagram"></div>
+              <div class="mini-finger-hint" id="mini-finger-hint"></div>
+            </div>
+          </div>
+
+          <!-- 隐藏输入框（捕获键盘输入） -->
+          <input type="text" id="train-input" class="hidden-input" autocomplete="off" autofocus />
+
+          <!-- 结果弹窗 -->
+          <div class="train-result-modal" id="train-result-modal" style="display: none">
+            <div class="modal-content">
+              <h3>练习完成</h3>
+              <div class="result-stats" id="result-stats">
+                <!-- 由 JS 动态填充 -->
+              </div>
+              <div class="result-errors" id="result-errors">
+                <!-- 错误键位列表 -->
+              </div>
+              <button id="result-close-btn" class="btn btn-accent">关闭 <kbd>Esc</kbd></button>
+            </div>
+          </div>
         </section>
 
         <!-- 游戏面板 -->
@@ -45,11 +171,87 @@
           <canvas id="game-canvas" width="800" height="500"></canvas>
           <input id="game-input" type="text" autocomplete="off" aria-label="游戏输入" />
           <div class="game-controls">
-            <button id="btn-start">开始游戏</button>
-            <button id="btn-pause">暂停</button>
-            <button id="btn-reset">重置</button>
+            <button id="btn-start">开始游戏 <kbd>Enter</kbd></button>
+            <button id="btn-pause">暂停 <kbd>Ctrl+P</kbd></button>
+            <button id="btn-reset">重置 <kbd>Esc</kbd></button>
           </div>
-          <p class="game-tip">输入单词击落目标；按 Esc 暂停，Backspace 回退当前锁定单词。</p>
+          <p class="game-tip">
+            输入单词击落目标；<kbd>Esc</kbd> 暂停/重置，<kbd>Backspace</kbd> 回退，<kbd>Enter</kbd>
+            开始。
+          </p>
+        </section>
+
+        <!-- 词库面板 -->
+        <section id="panel-vocab" class="panel">
+          <div class="vocab-header">
+            <h2>词库管理</h2>
+            <div class="vocab-review">
+              <span class="vocab-review-label">今日待复习：</span>
+              <strong id="vocab-review-count">0</strong>
+              <button id="vocab-review-btn" class="btn btn-accent">开始今日复习</button>
+            </div>
+          </div>
+
+          <div class="vocab-toolbar">
+            <label for="vocab-category-filter">分类：</label>
+            <select id="vocab-category-filter"></select>
+            <input
+              id="vocab-search"
+              type="search"
+              placeholder="搜索单词或释义..."
+              autocomplete="off"
+            />
+            <span class="vocab-count">共 <strong id="vocab-total-count">0</strong> 词</span>
+            <div class="vocab-io">
+              <button id="vocab-export-btn" class="btn">导出 JSON</button>
+              <button id="vocab-import-btn" class="btn">导入 JSON</button>
+              <input id="vocab-import-file" type="file" accept="application/json,.json" hidden />
+            </div>
+          </div>
+
+          <table class="vocab-table" id="vocab-table">
+            <thead>
+              <tr>
+                <th>单词</th>
+                <th>释义</th>
+                <th>分类</th>
+                <th>难度</th>
+                <th>掌握度</th>
+                <th>下次复习</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="vocab-word-list"></tbody>
+          </table>
+
+          <div class="vocab-form">
+            <h3>添加 / 编辑单词</h3>
+            <div class="vocab-form-row">
+              <label for="vocab-word-text">单词</label>
+              <input id="vocab-word-text" type="text" placeholder="如 apple" autocomplete="off" />
+            </div>
+            <div class="vocab-form-row">
+              <label for="vocab-word-meaning">释义</label>
+              <input
+                id="vocab-word-meaning"
+                type="text"
+                placeholder="如 苹果（可选）"
+                autocomplete="off"
+              />
+            </div>
+            <div class="vocab-form-row">
+              <label for="vocab-word-category">分类</label>
+              <select id="vocab-word-category"></select>
+            </div>
+            <div class="vocab-form-row">
+              <label for="vocab-word-difficulty">难度</label>
+              <select id="vocab-word-difficulty"></select>
+            </div>
+            <div class="vocab-form-actions">
+              <button id="vocab-submit-btn" class="btn btn-accent">添加单词</button>
+              <button id="vocab-cancel-btn" class="btn" style="display: none">取消编辑</button>
+            </div>
+          </div>
         </section>
 
         <!-- 排行榜面板 -->
@@ -67,6 +269,104 @@
           </table>
         </section>
       </main>
+
+      <!-- 帮助弹窗 -->
+      <div class="help-modal" id="help-modal" style="display: none">
+        <div class="modal-content help-content">
+          <h3>⌨️ 快捷键一览</h3>
+          <div class="help-sections">
+            <div class="help-section">
+              <h4>全局</h4>
+              <table>
+                <tr>
+                  <td><kbd>Ctrl+1</kbd></td>
+                  <td>切换到指法训练</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl+2</kbd></td>
+                  <td>切换到单词掉落</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl+3</kbd></td>
+                  <td>切换到词库</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl+4</kbd></td>
+                  <td>切换到排行榜</td>
+                </tr>
+                <tr>
+                  <td><kbd>F1</kbd></td>
+                  <td>显示/隐藏此帮助</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl+Shift+U</kbd></td>
+                  <td>循环切换用户</td>
+                </tr>
+              </table>
+            </div>
+            <div class="help-section">
+              <h4>指法训练</h4>
+              <table>
+                <tr>
+                  <td><kbd>Enter</kbd></td>
+                  <td>开始练习 / 下一关</td>
+                </tr>
+                <tr>
+                  <td><kbd>Esc</kbd></td>
+                  <td>重置练习 / 关闭弹窗</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl+Shift+1/2/3</kbd></td>
+                  <td>切换键位/单词/文章练习</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl+↑↓</kbd></td>
+                  <td>切换练习层级</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl+←/→</kbd></td>
+                  <td>切换练习阶段</td>
+                </tr>
+              </table>
+            </div>
+            <div class="help-section">
+              <h4>单词掉落</h4>
+              <table>
+                <tr>
+                  <td><kbd>Enter</kbd></td>
+                  <td>开始游戏（未开始时）</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl+P</kbd></td>
+                  <td>暂停 / 继续</td>
+                </tr>
+                <tr>
+                  <td><kbd>Esc</kbd></td>
+                  <td>重置游戏</td>
+                </tr>
+                <tr>
+                  <td><kbd>Backspace</kbd></td>
+                  <td>回退当前锁定单词</td>
+                </tr>
+                <tr>
+                  <td>字母键</td>
+                  <td>输入字符击落单词</td>
+                </tr>
+              </table>
+            </div>
+          </div>
+          <p class="help-hint">按 <kbd>F1</kbd> 或 <kbd>Esc</kbd> 关闭</p>
+        </div>
+      </div>
+
+      <!-- 底部快捷键提示 -->
+      <footer class="app-footer">
+        <span><kbd>Ctrl+1/2/3/4</kbd> 切换面板</span>
+        <span><kbd>F1</kbd> 帮助</span>
+        <span><kbd>Ctrl+Shift+U</kbd> 切换用户</span>
+        <span><kbd>Enter</kbd> 开始</span>
+        <span><kbd>Esc</kbd> 重置/暂停</span>
+      </footer>
     </div>
 
     <script type="module" src="dist/main.js"></script>

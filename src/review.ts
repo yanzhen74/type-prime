@@ -31,10 +31,15 @@ export class ReviewScheduler {
    */
   recordResult(wordId: string, isCorrect: boolean, now: number = Date.now()): ReviewState {
     const previous = this.states.get(wordId);
-    const state = this.nextState(previous, isCorrect, now);
+    const state = this.nextState(wordId, previous, isCorrect, now);
     this.states.set(wordId, state);
     this.persist();
     return state;
+  }
+
+  /** 当前到期需要复习的单词数量 */
+  getDueCount(now: number = Date.now()): number {
+    return this.getDueReviews(now).length;
   }
 
   /**
@@ -70,6 +75,7 @@ export class ReviewScheduler {
   }
 
   private nextState(
+    wordId: string,
     previous: ReviewState | undefined,
     isCorrect: boolean,
     now: number
@@ -80,7 +86,7 @@ export class ReviewScheduler {
 
     if (q < 3) {
       return {
-        wordId: previous?.wordId ?? '',
+        wordId,
         interval: 1,
         repetition: 0,
         easeFactor: newEf,
@@ -100,7 +106,7 @@ export class ReviewScheduler {
     }
 
     return {
-      wordId: previous?.wordId ?? '',
+      wordId,
       interval,
       repetition,
       easeFactor: newEf,
