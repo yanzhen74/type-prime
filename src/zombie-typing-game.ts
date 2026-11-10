@@ -1,5 +1,5 @@
 import { GameEngine, type GameEngineOptions } from './game-engine.js';
-import type { ZombieKind, ZombieState } from './types.js';
+import type { Zombie, ZombieKind, ZombieState } from './types.js';
 
 /** 坚守多少波后判定「防守成功」 */
 const WAVES_TO_WIN = 8;
@@ -29,6 +29,28 @@ export const ZOMBIE_WORDS: Record<ZombieKind, string[]> = {
   tank: ['armored', 'bulwark', 'behemoth', 'fortress'],
   boss: ['the plants will defend the lawn', 'zombies beware of the pea shooter'],
 };
+
+/** 各类型僵尸造型配色（皮肤 / 衣物） */
+const ZOMBIE_PALETTE: Record<ZombieKind, { skin: string; clothes: string }> = {
+  normal: { skin: '#a3e635', clothes: '#4d7c0f' },
+  fast: { skin: '#fde047', clothes: '#ca8a04' },
+  tank: { skin: '#86efac', clothes: '#3f6212' },
+  boss: { skin: '#fda4af', clothes: '#7f1d1d' },
+};
+
+/** 各类型僵尸造型尺寸（宽/高），快速瘦小、坦克宽壮、BOSS 最大 */
+function zombieDims(kind: ZombieKind): { w: number; h: number } {
+  switch (kind) {
+    case 'fast':
+      return { w: 28, h: 44 };
+    case 'tank':
+      return { w: 46, h: 50 };
+    case 'boss':
+      return { w: 56, h: 64 };
+    default:
+      return { w: 34, h: 46 };
+  }
+}
 
 /** 道具类型：修复基地 / 冻结全场 / 直接加分 */
 export type ZombieItem = 'heal' | 'freeze' | 'score';
@@ -199,11 +221,16 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     this.state.lockedZombieIndex = null;
     this.state.currentInput = '';
 
-    if (this.state.waveQueue.length === 0 && this.state.zombies.length === 0) {
-      this.handleWaveClear();
-    } else {
+    if (!this.checkWaveClear()) {
       this.emitUpdate();
     }
+  }
+
+  /** 本波清空（击杀或全部触底）则推进波次；返回是否已推进 */
+  private checkWaveClear(): boolean {
+    if (this.state.waveQueue.length !== 0 || this.state.zombies.length !== 0) return false;
+    this.handleWaveClear();
+    return true;
   }
 
   /** 击杀掉落道具：修复 / 冻结 / 加分 */
@@ -294,6 +321,9 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
         this.emitUpdate();
       }
     }
+
+    // 本波僵尸全部触底（未被击杀）也须推进波次，否则会卡住不再出怪
+    this.checkWaveClear();
   }
 
   protected draw(): void {
@@ -345,19 +375,10 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
       const z = this.state.zombies[i];
       const isLocked = i === this.state.lockedZombieIndex;
       const errorLocked = errorActive && isLocked;
-      const bodyW = z.kind === 'boss' ? 56 : 40;
-      const bodyH = z.kind === 'boss' ? 64 : 48;
+      const { w: bodyW, h: bodyH } = zombieDims(z.kind);
 
-      // 躯体（冻结时染蓝）
-      ctx.fillStyle = frozen
-        ? 'rgba(56,189,248,0.4)'
-        : z.kind === 'boss'
-          ? 'rgba(244,63,94,0.4)'
-          : 'rgba(163,230,53,0.35)';
-      ctx.strokeStyle = errorLocked ? '#f43f5e' : isLocked ? '#fbbf24' : '#a3e635';
-      ctx.lineWidth = isLocked ? 2 : 1;
-      ctx.fillRect(z.x - bodyW / 2, z.y - bodyH / 2, bodyW, bodyH);
-      ctx.strokeRect(z.x - bodyW / 2, z.y - bodyH / 2, bodyW, bodyH);
+      // 造型躯体（头/躯干/手臂/腿 + 步态摆动；冻结时染蓝）
+      this.drawZombieBody(z, now, isLocked, errorLocked, frozen);
 
       // 携带单词
       ctx.font = isLocked ? 'bold 18px sans-serif' : '16px sans-serif';
@@ -428,6 +449,109 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
         this.state.victory ? '#22c55e' : '#f43f5e'
       );
     }
+  }
+
+  /**
+   * 绘制可辨识的僵尸造型（头/躯干/手臂/腿），带步态摆动；
+   * 按类型区分体型与配色，并为坦克/BOSS/快速添加专属细节。
+   * 造型以 (z.x, z.y) 为中心，不遮挡上方携带单词与血条。
+   */
+  private drawZombieBody(
+    z: Zombie,
+    now: number,
+    isLocked: boolean,
+    errorLocked: boolean,
+    frozen: boolean
+  ): void {
+    const ctx = this.ctx;
+    const { w, h } = zombieDims(z.kind);
+    const palette = ZOMBIE_PALETTE[z.kind];
+    const skin = frozen ? '#7dd3fc' : palette.skin;
+    const clothes = frozen ? '#38bdf8' : palette.clothes;
+    const phase = now / 260 + z.id * 0.7;
+    const lean = Math.sin(phase) * 0.09;
+    const swing = Math.sin(phase) * 0.35;
+
+    ctx.save();
+    ctx.translate(z.x, z.y);
+    ctx.rotate(lean);
+
+    // 腿（前后摆动）
+    ctx.fillStyle = clothes;
+    const legW = w * 0.16;
+    const legH = h * 0.34;
+    ctx.fillRect(-w * 0.2 + swing * 3, h * 0.16, legW, legH);
+    ctx.fillRect(w * 0.06 - swing * 3, h * 0.16, legW, legH);
+
+    // 躯干
+    ctx.fillStyle = clothes;
+    ctx.fillRect(-w * 0.26, -h * 0.18, w * 0.52, h * 0.38);
+
+    // 手臂（前伸的经典僵尸姿态，随步态摆动）
+    ctx.fillStyle = skin;
+    const armW = w * 0.14;
+    const armH = h * 0.3;
+    ctx.save();
+    ctx.translate(-w * 0.26, -h * 0.1);
+    ctx.rotate(-0.5 + swing * 0.3);
+    ctx.fillRect(-armW, 0, armW, armH);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(w * 0.26, -h * 0.1);
+    ctx.rotate(0.5 - swing * 0.3);
+    ctx.fillRect(0, 0, armW, armH);
+    ctx.restore();
+
+    // 头
+    ctx.fillStyle = skin;
+    ctx.beginPath();
+    ctx.arc(0, -h * 0.32, w * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 眼睛
+    ctx.fillStyle = '#0f172a';
+    const eyeR = Math.max(1.5, w * 0.04);
+    ctx.beginPath();
+    ctx.arc(-w * 0.08, -h * 0.35, eyeR, 0, Math.PI * 2);
+    ctx.arc(w * 0.08, -h * 0.35, eyeR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 类型专属细节
+    if (z.kind === 'tank') {
+      // 护甲边框
+      ctx.strokeStyle = '#1a2e05';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(-w * 0.26, -h * 0.18, w * 0.52, h * 0.38);
+    } else if (z.kind === 'boss') {
+      // 犄角
+      ctx.strokeStyle = '#fecdd3';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-w * 0.14, -h * 0.46);
+      ctx.lineTo(-w * 0.24, -h * 0.62);
+      ctx.moveTo(w * 0.14, -h * 0.46);
+      ctx.lineTo(w * 0.24, -h * 0.62);
+      ctx.stroke();
+    } else if (z.kind === 'fast') {
+      // 疾速线
+      ctx.strokeStyle = 'rgba(253,224,71,0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-w * 0.55, -h * 0.12);
+      ctx.lineTo(-w * 0.34, -h * 0.12);
+      ctx.moveTo(-w * 0.55, h * 0.06);
+      ctx.lineTo(-w * 0.34, h * 0.06);
+      ctx.stroke();
+    }
+
+    // 锁定/错误描边
+    if (isLocked) {
+      ctx.strokeStyle = errorLocked ? '#f43f5e' : '#fbbf24';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-w * 0.42, -h * 0.56, w * 0.84, h * 1.08);
+    }
+
+    ctx.restore();
   }
 
   /** 结算页：得分 / 坚守波次 / 击杀 / 道具 */

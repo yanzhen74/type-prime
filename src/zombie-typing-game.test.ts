@@ -140,6 +140,20 @@ describe('ZombieTypingGame', () => {
     expect(game.s.lives).toBe(before - 1 - 3);
   });
 
+  it('本波最后一只僵尸触底后仍推进波次（不卡住不出怪）', () => {
+    const game = makeGame();
+    game.forceRunning();
+    game.s.waveQueue = [];
+    game.spawn('normal');
+    game.s.zombies[0].speed = 1000;
+    game.tick(0);
+
+    expect(game.s.zombies).toEqual([]);
+    expect(game.s.wavesCleared).toBe(1);
+    expect(game.s.level).toBe(2);
+    expect(game.s.waveQueue).toEqual(waveComposition(2));
+  });
+
   it('击杀掉落修复道具时回补基地血量并计数', () => {
     const game = makeGame();
     game.forceRunning();
