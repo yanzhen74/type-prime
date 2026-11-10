@@ -40,6 +40,40 @@ export interface GameState extends GameBaseState {
   levelClearFlashAt?: number;
 }
 
+/** 闯关射击目标内容类型：单字母→字母组合→简单单词→复杂单词→短语→BOSS */
+export type ShooterKind = 'letter' | 'combo' | 'simple' | 'complex' | 'phrase' | 'boss';
+
+/** 闯关射击的下落目标 */
+export interface ShooterTarget {
+  id: number;
+  text: string;
+  kind: ShooterKind;
+  typedIndex: number;
+  x: number;
+  y: number;
+  speed: number;
+  /** 剩余生命：BOSS 需多轮输入 */
+  hp: number;
+}
+
+/** 闯关射击游戏状态 */
+export interface ShooterState extends GameBaseState {
+  targets: ShooterTarget[];
+  lockedTargetIndex: number | null;
+  currentInput: string;
+  /** 当前连击数（连续击毁未失误） */
+  combo: number;
+  maxCombo: number;
+  /** 累计正确字符数，用于结算准确率 */
+  correctChars: number;
+  targetsClearedThisLevel: number;
+  levelsCleared: number;
+  victory?: boolean;
+  levelClearFlashAt?: number;
+  /** 击毁特效（扩散环），短时渲染后自动清理 */
+  effects: { x: number; y: number; at: number }[];
+}
+
 export type Finger = 'pinky' | 'ring' | 'middle' | 'index' | 'thumb' | 'unknown';
 
 // 词库与记忆曲线相关类型
