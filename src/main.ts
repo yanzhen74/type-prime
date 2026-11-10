@@ -1,16 +1,19 @@
 import { UserProgress } from './storage.js';
 import { KeyboardRenderer } from './keyboard.js';
 import { FallingWordGame, type GameOptions } from './game.js';
+import { TypingShooterGame } from './typing-shooter-game.js';
 import { TypingEngine } from './input.js';
 import { TrainPanel } from './train-panel.js';
 import { VocabularyBank } from './vocabulary.js';
 import { ReviewScheduler } from './review.js';
 import { VocabPanel } from './vocab-panel.js';
 import { Dialog } from './dialog.js';
-import type { GameState } from './types.js';
+import type { GameBaseState } from './types.js';
 
 /** 游戏难度设置（持久化到 localStorage） */
 interface GameSettings {
+  /** 游戏模式：单词掉落 / 闯关射击 */
+  mode: 'falling' | 'shooter';
   startingLevel: number;
   speedMultiplier: number;
   wordSource: 'builtin' | 'vocab';
@@ -19,6 +22,7 @@ interface GameSettings {
 const GAME_SETTINGS_KEY = 'typeprime_game_settings';
 
 const DEFAULT_GAME_SETTINGS: GameSettings = {
+  mode: 'falling',
   startingLevel: 1,
   speedMultiplier: 1,
   wordSource: 'builtin',
@@ -27,7 +31,7 @@ const DEFAULT_GAME_SETTINGS: GameSettings = {
 class App {
   private storage: UserProgress;
   private keyboard: KeyboardRenderer | null = null;
-  private game: FallingWordGame;
+  private game: FallingWordGame | TypingShooterGame;
   private vocabulary: VocabularyBank;
   private review: ReviewScheduler;
   private typingEngine: TypingEngine;
@@ -59,6 +63,7 @@ class App {
   private gameStartLevel = document.getElementById('game-start-level') as HTMLSelectElement;
   private gameSpeed = document.getElementById('game-speed') as HTMLSelectElement;
   private gameWordSource = document.getElementById('game-word-source') as HTMLSelectElement;
+  private gameModeSelect = document.getElementById('game-mode') as HTMLSelectElement;
   /** 游戏面板设置控件持有焦点时为 true，用于抑制 #game-input 失焦自动重聚焦抢夺下拉焦点 */
   private gameControlFocused = false;
 
@@ -99,12 +104,7 @@ class App {
 
     const gameSettings = this.loadGameSettings();
     this.applySettingsToControls(gameSettings);
-    this.game = new FallingWordGame(
-      'game-canvas',
-      (state) => this.onGameUpdate(state),
-      (score) => this.onGameOver(score),
-      this.buildGameOptions(gameSettings)
-    );
+    this.game = this.createGame(gameSettings);
 
     this.helpModal = document.getElementById('help-modal');
 
@@ -241,7 +241,12 @@ class App {
   // -------------------------------------------------------------------------
 
   private initGameSettings(): void {
-    const controls = [this.gameStartLevel, this.gameSpeed, this.gameWordSource];
+    const controls = [
+      this.gameModeSelect,
+      this.gameStartLevel,
+      this.gameSpeed,
+      this.gameWordSource,
+    ];
     for (const control of controls) {
       control.addEventListener('change', () => this.handleGameSettingChange());
       // 焦点保护：设置控件展开期间置位 gameControlFocused，抑制 #game-input
@@ -258,11 +263,35 @@ class App {
     }
   }
 
-  /** 设置变更：持久化并应用到游戏（重置当前局） */
+  /** 设置变更：持久化并重建当前模式的游戏实例（重置当前局） */
   private handleGameSettingChange(): void {
     const settings = this.readGameSettings();
     this.saveGameSettings(settings);
-    this.game.applyOptions(this.buildGameOptions(settings));
+    this.game = this.createGame(settings);
+    this.syncWordSourceDisabled(settings);
+  }
+
+  /** 按设置构造对应模式的游戏实例 */
+  private createGame(settings: GameSettings): FallingWordGame | TypingShooterGame {
+    const onUpdate = (state: GameBaseState) => this.onGameUpdate(state);
+    const onGameOver = (score: number) => this.onGameOver(score);
+    if (settings.mode === 'shooter') {
+      return new TypingShooterGame('game-canvas', onUpdate, onGameOver, {
+        startingLevel: settings.startingLevel,
+        speedMultiplier: settings.speedMultiplier,
+      });
+    }
+    return new FallingWordGame(
+      'game-canvas',
+      onUpdate,
+      onGameOver,
+      this.buildGameOptions(settings)
+    );
+  }
+
+  /** 闯关射击不使用词库词源，禁用该下拉避免误导 */
+  private syncWordSourceDisabled(settings: GameSettings): void {
+    this.gameWordSource.disabled = settings.mode === 'shooter';
   }
 
   private loadGameSettings(): GameSettings {
@@ -271,6 +300,7 @@ class App {
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<GameSettings>;
         return {
+          mode: parsed.mode === 'shooter' ? 'shooter' : 'falling',
           startingLevel: parsed.startingLevel ?? DEFAULT_GAME_SETTINGS.startingLevel,
           speedMultiplier: parsed.speedMultiplier ?? DEFAULT_GAME_SETTINGS.speedMultiplier,
           wordSource: parsed.wordSource === 'vocab' ? 'vocab' : 'builtin',
@@ -287,15 +317,18 @@ class App {
   }
 
   private applySettingsToControls(settings: GameSettings): void {
+    this.gameModeSelect.value = settings.mode;
     this.gameStartLevel.value = String(settings.startingLevel);
     this.gameSpeed.value = String(settings.speedMultiplier);
     this.gameWordSource.value = settings.wordSource;
+    this.syncWordSourceDisabled(settings);
   }
 
   private readGameSettings(): GameSettings {
     const level = Number(this.gameStartLevel.value);
     const speed = Number(this.gameSpeed.value);
     return {
+      mode: this.gameModeSelect.value === 'shooter' ? 'shooter' : 'falling',
       startingLevel: Number.isFinite(level) && level >= 1 ? level : 1,
       speedMultiplier: Number.isFinite(speed) && speed > 0 ? speed : 1,
       wordSource: this.gameWordSource.value === 'vocab' ? 'vocab' : 'builtin',
@@ -436,7 +469,7 @@ class App {
     return document.getElementById('panel-game')?.classList.contains('active') ?? false;
   }
 
-  private onGameUpdate(state: GameState): void {
+  private onGameUpdate(state: GameBaseState): void {
     this.scoreEl.textContent = String(state.score);
     this.livesEl.textContent = String(state.lives);
     this.levelEl.textContent = String(state.level);
@@ -445,10 +478,13 @@ class App {
     this.btnPause.innerHTML = state.isPaused ? '继续 <kbd>Ctrl+P</kbd>' : '暂停 <kbd>Ctrl+P</kbd>';
   }
 
-  private computeAccuracy(state: GameState): string {
-    const total = state.score / 10 + state.mistakes;
+  private computeAccuracy(state: GameBaseState): string {
+    // 闯关射击提供精确的正确字符数；单词掉落以得分/10 近似正确字符数
+    const correct =
+      'correctChars' in state ? (state as { correctChars: number }).correctChars : state.score / 10;
+    const total = correct + state.mistakes;
     if (total === 0) return '100%';
-    const accuracy = (state.score / 10 / total) * 100;
+    const accuracy = (correct / total) * 100;
     return `${accuracy.toFixed(1)}%`;
   }
 
