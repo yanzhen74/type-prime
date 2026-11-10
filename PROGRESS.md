@@ -1,8 +1,8 @@
-# type-prime 项目进度与需求记录
+# 打字基本法（Type Prime）项目进度与需求记录
 
 ## 1. 项目概述
 
-type-prime 是一个基于 TypeScript + HTML5 Canvas 的浏览器端打字练习项目。核心目标是通过标准指法输入完成键位训练、单词/文章练习、记忆曲线复习以及两款指法游戏（闯关射击、僵尸大战）。
+打字基本法（Type Prime，仓库标识 `type-prime`）是一个基于 TypeScript + HTML5 Canvas 的浏览器端指法训练项目。核心目标是通过标准指法输入完成键位训练、单词/文章练习、记忆曲线复习以及两款指法游戏（闯关射击、僵尸大战）。
 
 - 技术栈：TypeScript 5.4、`tsc` 编译、ESNext 模块、原生 HTML/CSS/Canvas 2D、Vitest + jsdom、ESLint + Prettier。
 - 完整实施计划见 [`PLAN.md`](./PLAN.md)。
@@ -149,11 +149,12 @@ type-prime 是一个基于 TypeScript + HTML5 Canvas 的浏览器端打字练习
 
 下一步实现第三块「指法游戏」（闯关射击 + 僵尸大战，二者同属游戏类），具体任务：
 
-1. 新建 `src/game-engine.ts`：提取通用游戏循环、状态管理、暂停 / 恢复与 `TypingEngine` 输入接入。
-2. 新建 `src/typing-shooter-game.ts`（`TypingShooterGame`）：目标从单字母 → 字母组合 → 单词 → 短语逐级；连击、关卡推进、BOSS、结算页。
-3. 新建 `src/zombie-typing-game.ts`（`ZombieTypingGame`）：波次系统、基地血量、普通 / 快速 / 坦克 / BOSS 僵尸、道具、结算页；复用 `FallingWordGame` 的目标锁定与单词进度逻辑。
-4. 表现层打磨：`src/sound-manager.ts`、`src/particle-system.ts`、主题与 Canvas 分层渲染。
-5. 测试：游戏引擎状态机、输入匹配、关卡 / 波次与结算测试。
+1. ✅ 新建 `src/game-engine.ts`：提取通用游戏循环、状态管理、暂停 / 恢复与 `TypingEngine` 输入接入。
+2. ✅ 新建 `src/typing-shooter-game.ts`（`TypingShooterGame`）：目标从单字母 → 字母组合 → 单词 → 短语逐级；连击、关卡推进、BOSS、结算页。
+3. ✅ 新建 `src/zombie-typing-game.ts`（`ZombieTypingGame`）：波次系统、基地血量、普通 / 快速 / 坦克 / BOSS 僵尸、道具、结算页；复用 `FallingWordGame` 的目标锁定与单词进度逻辑。
+4. ⬜ 僵尸造型改进（用户手动测试后反馈：当前僵尸仅为色块方框，不够形象）：在 `src/zombie-typing-game.ts` 的 `draw()` 中为四类僵尸绘制可辨识的造型（头/躯干/手臂/腿部轮廓或简笔精灵），普通/快速/坦克/BOSS 在体型、配色、细节上有明显区分；行走时可加轻微摆动/步态动画；保持 Canvas 2D 纯绘制、不引入图片资源与额外依赖；造型不得遮挡携带单词与血条的显示。
+5. ⬜ 表现层打磨：`src/sound-manager.ts`、`src/particle-system.ts`、主题与 Canvas 分层渲染。
+6. ⬜ 测试：游戏引擎状态机、输入匹配、关卡 / 波次与结算测试。
 
 ---
 

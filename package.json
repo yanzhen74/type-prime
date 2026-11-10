@@ -1,7 +1,7 @@
 {
   "name": "type-prime",
   "version": "0.3.0",
-  "description": "A browser-based typing game prototype with touch typing training and falling word gameplay.",
+  "description": "Type Prime（打字基本法）— a browser-based touch-typing fundamentals trainer: graded finger training, vocabulary & article practice, spaced-repetition review, and typing games (shooter & zombie).",
   "type": "module",
   "scripts": {
     "build": "tsc",

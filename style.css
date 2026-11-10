@@ -44,6 +44,13 @@ body {
   color: var(--accent);
 }
 
+.top-bar h1 .brand-en {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-muted, #94a3b8);
+  letter-spacing: 0.04em;
+}
+
 .user-section {
   display: flex;
   align-items: center;

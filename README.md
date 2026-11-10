@@ -1,6 +1,6 @@
-# type-prime
+# 打字基本法（Type Prime）
 
-一个基于 TypeScript + HTML5 Canvas 的浏览器端打字游戏原型，包含标准指法训练、单词掉落游戏、多用户本地存储与排行榜功能。
+打字基本法（Type Prime，仓库标识 `type-prime`）是一个基于 TypeScript + HTML5 Canvas 的浏览器端指法训练应用，包含分层指法训练、单词/文章练习与词库记忆曲线复习、两款指法游戏（闯关射击、僵尸大战），以及多用户本地存储与排行榜。
 
 ## 功能特性
 
