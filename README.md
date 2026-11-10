@@ -53,6 +53,36 @@ npm run serve
 
 > 注意：由于使用了 ES Module，直接双击 `index.html` 打开可能会因为 CORS 限制导致模块加载失败，建议使用本地服务器运行。
 
+### 4. 下载即用（离线单文件，无需服务器）
+
+从 [GitHub Releases](https://github.com/yanzhen74/type-prime/releases) 下载 `type-prime-standalone.html`（或对应 zip 包），双击即可在任意现代浏览器离线运行，无需安装 Node 或启动服务器。该单文件由发版流水线自动构建（内联 CSS 与打包后的 JS）。
+
+本地也可自行构建单文件包：
+
+```bash
+npm run build:release
+```
+
+产物位于 `release/type-prime-standalone.html`。
+
+## 发版流程（GitHub Actions 自动构建发布）
+
+仓库已配置 [.github/workflows/release.yml](.github/workflows/release.yml)：推送 `v*` tag（或手动触发 workflow_dispatch）时，GitHub Actions 会自动执行 lint / 测试 / 构建，打包单文件离线包与 zip，并创建 GitHub Release 附带下载资产。
+
+发版步骤：
+
+1. 同步版本号：将 `package.json` 的 `version` 改为目标版本（如 `0.3.1`）。
+2. 提交改动：`git commit`。
+3. 打 tag：`git tag -a v0.3.1 -m "v0.3.1: 说明"`。
+4. 推送分支与 tag：
+   ```bash
+   git push origin master
+   git push origin v0.3.1
+   ```
+5. 在 [Releases](https://github.com/yanzhen74/type-prime/releases) 页查看自动生成的 Release 与下载资产。
+
+> 说明：`release/` 为本地构建产物，已加入 `.gitignore`，不入库；Release 资产由 CI 生成。
+
 ## 后续扩展建议
 
 - 接入更丰富的词库与难度分级。
