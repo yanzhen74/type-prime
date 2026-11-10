@@ -1,6 +1,6 @@
 {
   "name": "type-prime",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "A browser-based typing game prototype with touch typing training and falling word gameplay.",
   "type": "module",
   "scripts": {
@@ -12,11 +12,13 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write \"src/**/*.{ts,js,json,md}\" \"*.{html,ts,js,json,md,css,mjs}\" \"vitest.config.ts\"",
-    "format:check": "prettier --check \"src/**/*.{ts,js,json,md}\" \"*.{html,ts,js,json,md,css,mjs}\" \"vitest.config.ts\""
+    "format:check": "prettier --check \"src/**/*.{ts,js,json,md}\" \"*.{html,ts,js,json,md,css,mjs}\" \"vitest.config.ts\"",
+    "build:release": "node scripts/build-release.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@vitest/ui": "^5.0.2",
+    "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.6",
