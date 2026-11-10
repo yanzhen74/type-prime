@@ -74,6 +74,43 @@ export interface ShooterState extends GameBaseState {
   effects: { x: number; y: number; at: number }[];
 }
 
+/** 僵尸类型：普通 / 快速 / 坦克 / BOSS */
+export type ZombieKind = 'normal' | 'fast' | 'tank' | 'boss';
+
+/** 僵尸大战中的僵尸实体 */
+export interface Zombie {
+  id: number;
+  text: string;
+  kind: ZombieKind;
+  typedIndex: number;
+  x: number;
+  y: number;
+  speed: number;
+  hp: number;
+  maxHp: number;
+}
+
+/** 僵尸大战游戏状态 */
+export interface ZombieState extends GameBaseState {
+  zombies: Zombie[];
+  lockedZombieIndex: number | null;
+  currentInput: string;
+  /** 本波待生成的僵尸队列（类型序列） */
+  waveQueue: ZombieKind[];
+  /** 累计击杀数 */
+  kills: number;
+  /** 累计拾取道具数 */
+  items: number;
+  /** 已清波数 */
+  wavesCleared: number;
+  /** 冻结（道具）截止时间戳 */
+  freezeUntil?: number;
+  victory?: boolean;
+  levelClearFlashAt?: number;
+  /** 击杀/道具浮动提示 */
+  effects: { x: number; y: number; at: number; text: string }[];
+}
+
 export type Finger = 'pinky' | 'ring' | 'middle' | 'index' | 'thumb' | 'unknown';
 
 // 词库与记忆曲线相关类型

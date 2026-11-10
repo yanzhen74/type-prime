@@ -2,6 +2,7 @@ import { UserProgress } from './storage.js';
 import { KeyboardRenderer } from './keyboard.js';
 import { FallingWordGame, type GameOptions } from './game.js';
 import { TypingShooterGame } from './typing-shooter-game.js';
+import { ZombieTypingGame } from './zombie-typing-game.js';
 import { TypingEngine } from './input.js';
 import { TrainPanel } from './train-panel.js';
 import { VocabularyBank } from './vocabulary.js';
@@ -12,8 +13,8 @@ import type { GameBaseState } from './types.js';
 
 /** 游戏难度设置（持久化到 localStorage） */
 interface GameSettings {
-  /** 游戏模式：单词掉落 / 闯关射击 */
-  mode: 'falling' | 'shooter';
+  /** 游戏模式：单词掉落 / 闯关射击 / 僵尸大战 */
+  mode: 'falling' | 'shooter' | 'zombie';
   startingLevel: number;
   speedMultiplier: number;
   wordSource: 'builtin' | 'vocab';
@@ -31,7 +32,7 @@ const DEFAULT_GAME_SETTINGS: GameSettings = {
 class App {
   private storage: UserProgress;
   private keyboard: KeyboardRenderer | null = null;
-  private game: FallingWordGame | TypingShooterGame;
+  private game: FallingWordGame | TypingShooterGame | ZombieTypingGame;
   private vocabulary: VocabularyBank;
   private review: ReviewScheduler;
   private typingEngine: TypingEngine;
@@ -272,11 +273,19 @@ class App {
   }
 
   /** 按设置构造对应模式的游戏实例 */
-  private createGame(settings: GameSettings): FallingWordGame | TypingShooterGame {
+  private createGame(
+    settings: GameSettings
+  ): FallingWordGame | TypingShooterGame | ZombieTypingGame {
     const onUpdate = (state: GameBaseState) => this.onGameUpdate(state);
     const onGameOver = (score: number) => this.onGameOver(score);
     if (settings.mode === 'shooter') {
       return new TypingShooterGame('game-canvas', onUpdate, onGameOver, {
+        startingLevel: settings.startingLevel,
+        speedMultiplier: settings.speedMultiplier,
+      });
+    }
+    if (settings.mode === 'zombie') {
+      return new ZombieTypingGame('game-canvas', onUpdate, onGameOver, {
         startingLevel: settings.startingLevel,
         speedMultiplier: settings.speedMultiplier,
       });
@@ -289,9 +298,9 @@ class App {
     );
   }
 
-  /** 闯关射击不使用词库词源，禁用该下拉避免误导 */
+  /** 闯关射击/僵尸大战不使用词库词源，禁用该下拉避免误导 */
   private syncWordSourceDisabled(settings: GameSettings): void {
-    this.gameWordSource.disabled = settings.mode === 'shooter';
+    this.gameWordSource.disabled = settings.mode !== 'falling';
   }
 
   private loadGameSettings(): GameSettings {
@@ -300,7 +309,7 @@ class App {
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<GameSettings>;
         return {
-          mode: parsed.mode === 'shooter' ? 'shooter' : 'falling',
+          mode: parsed.mode === 'shooter' || parsed.mode === 'zombie' ? parsed.mode : 'falling',
           startingLevel: parsed.startingLevel ?? DEFAULT_GAME_SETTINGS.startingLevel,
           speedMultiplier: parsed.speedMultiplier ?? DEFAULT_GAME_SETTINGS.speedMultiplier,
           wordSource: parsed.wordSource === 'vocab' ? 'vocab' : 'builtin',
@@ -328,7 +337,10 @@ class App {
     const level = Number(this.gameStartLevel.value);
     const speed = Number(this.gameSpeed.value);
     return {
-      mode: this.gameModeSelect.value === 'shooter' ? 'shooter' : 'falling',
+      mode:
+        this.gameModeSelect.value === 'shooter' || this.gameModeSelect.value === 'zombie'
+          ? this.gameModeSelect.value
+          : 'falling',
       startingLevel: Number.isFinite(level) && level >= 1 ? level : 1,
       speedMultiplier: Number.isFinite(speed) && speed > 0 ? speed : 1,
       wordSource: this.gameWordSource.value === 'vocab' ? 'vocab' : 'builtin',
