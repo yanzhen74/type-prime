@@ -411,7 +411,7 @@ class App {
       if (data) {
         for (const char of data) {
           if (char !== ' ') {
-            this.game.handleInput(char.toLowerCase());
+            this.game.handleChar(char.toLowerCase());
           }
         }
       }

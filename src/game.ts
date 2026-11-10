@@ -1,3 +1,4 @@
+import { GameEngine } from './game-engine.js';
 import type { GameState } from './types.js';
 
 const VOCABULARY = [
@@ -73,19 +74,14 @@ export function computeSpawnInterval(level: number): number {
   return Math.max(SPAWN_FLOOR, SPAWN_BASE - level * SPAWN_PER_LEVEL);
 }
 
-export class FallingWordGame {
-  private canvas: HTMLCanvasElement;
-  private ctx: CanvasRenderingContext2D;
-  private state: GameState;
-  private animationId = 0;
-  private lastSpawn = 0;
-  private countdownTimer = 0;
-  private onUpdate: (state: GameState) => void;
-  private onGameOver: (score: number) => void;
-  // 难度与词源选项
-  private startingLevel: number;
-  private speedMultiplier: number;
+/**
+ * 单词掉落游戏。
+ * 循环 / 状态 / 暂停恢复 / 输入门控 / TypingEngine 接入等通用能力由 GameEngine 基类提供，
+ * 本类只保留下落玩法：自动锁定、逐字符击落、通关升关与 Canvas 绘制。
+ */
+export class FallingWordGame extends GameEngine<GameState> {
   private wordProvider?: () => string;
+  private lastSpawn = 0;
 
   constructor(
     canvasId: string,
@@ -93,22 +89,8 @@ export class FallingWordGame {
     onGameOver: (score: number) => void,
     options: GameOptions = {}
   ) {
-    const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
-    if (!canvas) {
-      throw new Error('Game canvas not found');
-    }
-    this.canvas = canvas;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      throw new Error('Canvas 2D context not supported');
-    }
-    this.ctx = ctx;
-    this.onUpdate = onUpdate;
-    this.onGameOver = onGameOver;
-    this.startingLevel = Math.max(1, options.startingLevel ?? 1);
-    this.speedMultiplier = options.speedMultiplier ?? 1;
+    super(canvasId, { onUpdate, onGameOver }, options);
     this.wordProvider = options.wordProvider;
-    this.state = this.createInitialState();
   }
 
   /**
@@ -123,76 +105,25 @@ export class FallingWordGame {
     this.reset();
   }
 
-  private createInitialState(): GameState {
+  protected createState(): GameState {
     return {
-      score: 0,
+      ...this.createBaseState(),
       lives: START_LIVES,
-      level: this.startingLevel,
-      isRunning: false,
-      isPaused: false,
       words: [],
       currentInput: '',
       lockedWordIndex: null,
-      mistakes: 0,
-      countdown: 3,
       wordsClearedThisLevel: 0,
       levelsCleared: 0,
       victory: false,
     };
   }
 
-  start(): void {
-    if (this.state.isRunning) return;
-    this.state = this.createInitialState();
-    this.state.isRunning = true;
-    this.state.countdown = 3;
-    this.runCountdown();
-    this.onUpdate(this.state);
+  /** 倒计时结束 / 恢复运行时重置出词计时，避免立即补刷单词 */
+  protected onResume(): void {
+    this.lastSpawn = performance.now();
   }
 
-  /** 游戏是否正在运行（含倒计时和暂停状态） */
-  isRunning(): boolean {
-    return this.state.isRunning;
-  }
-
-  private runCountdown(): void {
-    if (this.state.countdown > 0) {
-      this.draw();
-      this.countdownTimer = window.setTimeout(() => {
-        this.state.countdown -= 1;
-        this.onUpdate(this.state);
-        this.runCountdown();
-      }, 1000);
-    } else {
-      this.lastSpawn = performance.now();
-      this.loop(performance.now());
-    }
-  }
-
-  pause(): void {
-    this.state.isPaused = !this.state.isPaused;
-    if (!this.state.isPaused) {
-      this.lastSpawn = performance.now();
-      this.loop(performance.now());
-    } else {
-      cancelAnimationFrame(this.animationId);
-      this.draw();
-    }
-    this.onUpdate(this.state);
-  }
-
-  reset(): void {
-    this.state.isRunning = false;
-    cancelAnimationFrame(this.animationId);
-    window.clearTimeout(this.countdownTimer);
-    this.state = this.createInitialState();
-    this.draw();
-    this.onUpdate(this.state);
-  }
-
-  handleInput(char: string): void {
-    if (!this.state.isRunning || this.state.isPaused || this.state.countdown > 0) return;
-
+  protected onChar(char: string): void {
     // 自动锁定：优先匹配位置最低（最紧急）且以当前字符开头的单词
     if (this.state.lockedWordIndex === null) {
       const matchIndex = this.findMatchingWord(char);
@@ -200,7 +131,7 @@ export class FallingWordGame {
         this.state.lockedWordIndex = matchIndex;
       } else {
         this.recordError(char);
-        this.onUpdate(this.state);
+        this.emitUpdate();
         return;
       }
     }
@@ -216,22 +147,15 @@ export class FallingWordGame {
       if (word.typedIndex >= word.text.length) {
         this.destroyWord(this.state.lockedWordIndex);
       } else {
-        this.onUpdate(this.state);
+        this.emitUpdate();
       }
     } else {
       this.recordError(char);
-      this.onUpdate(this.state);
+      this.emitUpdate();
     }
   }
 
-  /** 记录一次错误输入：累加失误并写入 lastError（字符 + 时间戳），供 draw() 做短时红色闪烁反馈 */
-  private recordError(char: string): void {
-    this.state.mistakes += 1;
-    this.state.lastError = { char, at: performance.now() };
-  }
-
-  handleBackspace(): void {
-    if (!this.state.isRunning || this.state.isPaused || this.state.countdown > 0) return;
+  protected onBackspace(): void {
     if (this.state.lockedWordIndex === null) return;
 
     const word = this.state.words[this.state.lockedWordIndex];
@@ -239,14 +163,13 @@ export class FallingWordGame {
 
     word.typedIndex -= 1;
     this.state.currentInput = this.state.currentInput.slice(0, -1);
-    this.onUpdate(this.state);
+    this.emitUpdate();
   }
 
-  submitWord(): void {
-    if (!this.state.isRunning || this.state.isPaused || this.state.countdown > 0) return;
+  protected onSubmit(): void {
     // 当前设计为逐字符输入即销毁，submit 用于清理输入框显示
     this.state.currentInput = '';
-    this.onUpdate(this.state);
+    this.emitUpdate();
   }
 
   private findMatchingWord(char: string): number | null {
@@ -280,7 +203,7 @@ export class FallingWordGame {
     if (this.state.wordsClearedThisLevel >= LEVEL_CLEAR_WORDS) {
       this.handleLevelClear();
     } else {
-      this.onUpdate(this.state);
+      this.emitUpdate();
     }
   }
 
@@ -294,11 +217,10 @@ export class FallingWordGame {
 
     if ((this.state.levelsCleared ?? 0) >= LEVELS_TO_WIN) {
       this.state.victory = true;
-      this.state.isRunning = false;
-      cancelAnimationFrame(this.animationId);
-      this.onGameOver(this.state.score);
+      this.gameOver();
+      return;
     }
-    this.onUpdate(this.state);
+    this.emitUpdate();
   }
 
   private spawnWord(): void {
@@ -313,22 +235,13 @@ export class FallingWordGame {
     this.state.words.push({ text, x, y: 0, speed, typedIndex: 0 });
   }
 
-  private loop(now: number): void {
-    if (!this.state.isRunning || this.state.isPaused || this.state.countdown > 0) return;
-
+  protected update(now: number): void {
     const spawnInterval = computeSpawnInterval(this.state.level);
     if (now - this.lastSpawn > spawnInterval) {
       this.spawnWord();
       this.lastSpawn = now;
     }
 
-    this.update();
-    this.draw();
-
-    this.animationId = requestAnimationFrame((t) => this.loop(t));
-  }
-
-  private update(): void {
     for (let i = this.state.words.length - 1; i >= 0; i--) {
       const word = this.state.words[i];
       word.y += word.speed;
@@ -347,19 +260,12 @@ export class FallingWordGame {
           this.gameOver();
           return;
         }
-        this.onUpdate(this.state);
+        this.emitUpdate();
       }
     }
   }
 
-  private gameOver(): void {
-    this.state.isRunning = false;
-    cancelAnimationFrame(this.animationId);
-    this.onGameOver(this.state.score);
-    this.onUpdate(this.state);
-  }
-
-  private draw(): void {
+  protected draw(): void {
     const ctx = this.ctx;
     const width = this.canvas.width;
     const height = this.canvas.height;

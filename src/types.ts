@@ -13,19 +13,23 @@ export interface Word {
   typedIndex: number;
 }
 
-export interface GameState {
+/** 所有指法游戏共享的基础状态（游戏引擎基类维护） */
+export interface GameBaseState {
   score: number;
   lives: number;
   level: number;
   isRunning: boolean;
   isPaused: boolean;
+  countdown: number;
+  mistakes: number;
+  /** 最近一次错误输入（字符 + 时间戳），用于短时红色闪烁/shake 反馈；超时后不再渲染 */
+  lastError?: { char: string; at: number };
+}
+
+export interface GameState extends GameBaseState {
   words: Word[];
   currentInput: string;
   lockedWordIndex: number | null;
-  mistakes: number;
-  countdown: number;
-  /** 最近一次错误输入（字符 + 时间戳），用于短时红色闪烁/shake 反馈；超时后不再渲染 */
-  lastError?: { char: string; at: number };
   /** 本关已销毁单词数（达成通关目标即升关） */
   wordsClearedThisLevel?: number;
   /** 累计已通关关数 */
