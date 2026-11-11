@@ -1,6 +1,6 @@
 {
   "name": "type-prime",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Type Prime（打字基本法）— a browser-based touch-typing fundamentals trainer: graded finger training, vocabulary & article practice, spaced-repetition review, and typing games (shooter & zombie).",
   "type": "module",
   "scripts": {

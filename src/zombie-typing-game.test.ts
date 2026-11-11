@@ -253,7 +253,7 @@ describe('ZombieTypingGame', () => {
     expect(zombieBarColor('tank', 2)).toBe('#facc15');
     expect(zombieBarColor('tank', 1)).toBe('#ef4444');
     expect(zombieBarColor('normal', 1)).toBe('#ef4444');
-    expect(zombieBarColor('boss', 5)).toBe('#ef4444');
+    expect(zombieBarColor('boss', ZOMBIE_HP.boss)).toBe('#ef4444');
   });
 
   it('目标被击杀后在飞实弹 fizzle 移除', () => {
@@ -318,6 +318,7 @@ describe('ZombieTypingGame', () => {
 
     const boss = game.s.zombies[0];
     expect(boss.text).toContain(' ');
+    expect(boss.hp).toBe(3); // BOSS 降为三轮输入
     expect(lengthSpeedFactor(boss.text)).toBeLessThan(1);
     expect(boss.speed).toBeCloseTo(
       computeZombieSpeed('boss', game.s.level, 1, 0) * lengthSpeedFactor(boss.text)

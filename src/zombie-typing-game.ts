@@ -23,10 +23,15 @@ const PROJECTILE_TTL = 1500;
 /** 跳弹重力加速度（px/ms²） */
 const PROJECTILE_GRAVITY = 0.004;
 
-/** 各类型僵尸属性：生命 / 触底伤害 / 基础速度 */
-export const ZOMBIE_HP: Record<ZombieKind, number> = { normal: 1, fast: 1, tank: 3, boss: 5 };
+/** 各类型僵尸属性：生命 / 触底伤害 / 基础速度（BOSS 携带长句，降为 3 轮输入且速度取原值 3/4） */
+export const ZOMBIE_HP: Record<ZombieKind, number> = { normal: 1, fast: 1, tank: 3, boss: 3 };
 export const ZOMBIE_DAMAGE: Record<ZombieKind, number> = { normal: 1, fast: 1, tank: 2, boss: 3 };
-const ZOMBIE_SPEED: Record<ZombieKind, number> = { normal: 0.5, fast: 0.9, tank: 0.3, boss: 0.25 };
+const ZOMBIE_SPEED: Record<ZombieKind, number> = {
+  normal: 0.5,
+  fast: 0.9,
+  tank: 0.3,
+  boss: 0.1875,
+};
 
 /** 各类型僵尸携带的单词池 */
 export const ZOMBIE_WORDS: Record<ZombieKind, string[]> = {
