@@ -441,10 +441,16 @@ class App {
       }
 
       if (e.key === 'Enter' || e.key === ' ') {
-        // Enter/Space 在游戏运行中提交单词，在未运行时由 initGlobalShortcuts 处理开始
+        // Enter/Space 在游戏运行中提交单词，在未运行时由 initGlobalShortcuts 处理开始。
+        // 例外：当前锁定目标的下一个期望字符就是空格（短语/长句的词间空格）时，
+        // Space 作为字符输入而非提交，避免玩家养成不吃空格的错误习惯。
         if (this.game.isRunning()) {
           e.preventDefault();
-          this.game.submitWord();
+          if (e.key === ' ' && this.game.expectedChar() === ' ') {
+            this.game.handleChar(' ');
+          } else {
+            this.game.submitWord();
+          }
         }
       }
     });

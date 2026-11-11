@@ -10,6 +10,7 @@ import {
   ZOMBIE_WORDS,
 } from './zombie-typing-game.js';
 import type { ZombieKind, ZombieState } from './types.js';
+import { lengthSpeedFactor } from './game-engine.js';
 
 /** 测试子类：暴露状态与受保护方法，避免依赖 rAF/假计时器 */
 class TestZombie extends ZombieTypingGame {
@@ -221,24 +222,27 @@ describe('ZombieTypingGame', () => {
     expect(headBarFraction(z)).toBeLessThan(1);
   });
 
-  it('血条逐字符单调下降，多血僵尸跨轮衔接不跳变', () => {
+  it('血条按层显示：满格→逐字符掉光→破甲换色后重新满格', () => {
     const game = makeGame();
     game.forceRunning();
     game.spawn('tank');
     const z = game.s.zombies[0];
     const word = z.text;
     expect(headBarFraction(z)).toBe(1);
+    expect(zombieBarColor(z.kind, z.hp)).toBe('#38bdf8'); // 第一层蓝
 
     z.shownChars = 1; // 模拟一发炮弹命中
-    expect(headBarFraction(z)).toBeCloseTo((3 - 1 / word.length) / 3);
+    expect(headBarFraction(z)).toBeCloseTo(1 - 1 / word.length);
 
-    typeFull(game, word); // 打完第一轮：破甲但不清零血条层级
+    typeFull(game, word); // 打完第一层：扣 1 血、换色、血条重新满格
     expect(z.hp).toBe(2);
     expect(z.shownChars).toBe(0);
-    expect(headBarFraction(z)).toBeCloseTo(2 / 3);
+    expect(headBarFraction(z)).toBe(1);
+    expect(zombieBarColor(z.kind, z.hp)).toBe('#facc15'); // 第二层黄
 
     typeFull(game, word);
-    expect(headBarFraction(z)).toBeCloseTo(1 / 3);
+    expect(headBarFraction(z)).toBe(1);
+    expect(zombieBarColor(z.kind, z.hp)).toBe('#ef4444'); // 第三层红
 
     typeFull(game, word); // 击杀
     expect(game.s.zombies).toEqual([]);
@@ -305,5 +309,27 @@ describe('ZombieTypingGame', () => {
     game.tick(1000);
     game.tick(2000);
     expect(game.s.projectiles).toEqual([]);
+  });
+
+  it('BOSS 长句按长度减速，且词间空格可作为字符输入', () => {
+    const game = makeGame();
+    game.forceRunning();
+    game.spawn('boss');
+
+    const boss = game.s.zombies[0];
+    expect(boss.text).toContain(' ');
+    expect(lengthSpeedFactor(boss.text)).toBeLessThan(1);
+    expect(boss.speed).toBeCloseTo(
+      computeZombieSpeed('boss', game.s.level, 1, 0) * lengthSpeedFactor(boss.text)
+    );
+
+    const spaceAt = boss.text.indexOf(' ');
+    expect(game.expectedChar()).toBeNull(); // 未锁定
+    for (const ch of boss.text.slice(0, spaceAt)) game.handleChar(ch);
+    expect(game.expectedChar()).toBe(' ');
+
+    game.handleChar(' ');
+    expect(boss.typedIndex).toBe(spaceAt + 1);
+    expect(game.expectedChar()).toBe(boss.text[spaceAt + 1].toLowerCase());
   });
 });

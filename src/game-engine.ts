@@ -15,6 +15,20 @@ export interface GameEngineOptions {
   speedMultiplier?: number;
 }
 
+/** 文本长度速度补偿：参考长度以内不减速，下限避免长句慢到失去压迫感 */
+const LENGTH_COMP_REF = 8;
+const LENGTH_COMP_MIN = 0.4;
+
+/**
+ * 按文本长度补偿移动速度（抽为纯函数便于测试）。
+ * 含空格的短语/长句需要成倍输入时间，若与短词同速下落/行走则几乎不可能完成，
+ * 因此长度超过参考值时按比例减速。
+ */
+export function lengthSpeedFactor(text: string): number {
+  const len = Math.max(1, text.trim().length);
+  return Math.max(LENGTH_COMP_MIN, Math.min(1, LENGTH_COMP_REF / len));
+}
+
 /**
  * 指法游戏通用基类（块三游戏任务 1）。
  *
@@ -173,6 +187,15 @@ export abstract class GameEngine<S extends GameBaseState = GameBaseState> {
   /** Esc 默认重置游戏 */
   handleEscape(): void {
     this.reset();
+  }
+
+  /**
+   * 当前锁定目标的下一个期望字符（无锁定 / 不接受输入时返回 null）。
+   * 供外层判定多义按键：空格在期望空格时作为字符输入（避免养成不吃空格的习惯），
+   * 否则仍作为「提交单词」。子类按各自锁定目标覆写。
+   */
+  expectedChar(): string | null {
+    return null;
   }
 
   /** 运行态门控：仅运行中、未暂停、倒计时结束后才接受输入 */

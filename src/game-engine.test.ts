@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { GameEngine } from './game-engine.js';
+import { GameEngine, lengthSpeedFactor } from './game-engine.js';
 import type { TypingEngine } from './input.js';
 import type { GameBaseState, TypingEvent } from './types.js';
 
@@ -150,5 +150,32 @@ describe('GameEngine 基类', () => {
     game.triggerGameOver();
     expect(game.isRunning()).toBe(false);
     expect(overScore).toBe(0);
+  });
+});
+
+describe('lengthSpeedFactor（文本长度速度补偿）', () => {
+  beforeEach(() => {
+    const canvas = document.createElement('canvas');
+    canvas.id = 'test-canvas';
+    canvas.width = 800;
+    canvas.height = 500;
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => createMockCtx();
+    document.body.appendChild(canvas);
+  });
+
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('参考长度以内不减速，超长按比例减速且有下限', () => {
+    expect(lengthSpeedFactor('cat')).toBe(1);
+    expect(lengthSpeedFactor('keyboard')).toBe(1); // 恰好 8 字符
+    expect(lengthSpeedFactor('type fast')).toBeCloseTo(8 / 9);
+    expect(lengthSpeedFactor('the plants will defend the lawn')).toBe(0.4); // 触发下限
+  });
+
+  it('基类 expectedChar 默认返回 null（由子类覆写）', () => {
+    const game = new TestGame('test-canvas', { onUpdate: () => {}, onGameOver: () => {} });
+    expect(game.expectedChar()).toBeNull();
   });
 });

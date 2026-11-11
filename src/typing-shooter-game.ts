@@ -1,4 +1,4 @@
-import { GameEngine, type GameEngineOptions } from './game-engine.js';
+import { GameEngine, lengthSpeedFactor, type GameEngineOptions } from './game-engine.js';
 import type { ShooterKind, ShooterState } from './types.js';
 
 /** 每关需击毁的目标数（通关目标） */
@@ -107,6 +107,13 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
 
   protected onResume(): void {
     this.lastSpawn = performance.now();
+  }
+
+  /** 锁定目标的下一个期望字符（供外层判定空格是字符还是提交） */
+  expectedChar(): string | null {
+    if (!this.acceptsInput() || this.state.lockedTargetIndex === null) return null;
+    const target = this.state.targets[this.state.lockedTargetIndex];
+    return target ? (target.text[target.typedIndex]?.toLowerCase() ?? null) : null;
   }
 
   protected onChar(char: string): void {
@@ -235,7 +242,10 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     const text = pool[Math.floor(this.rng() * pool.length)];
     const padding = 60;
     const x = padding + this.rng() * (this.canvas.width - padding * 2);
-    const speed = computeShooterFallSpeed(this.state.level, this.speedMultiplier, this.rng());
+    // 短语/BOSS 长句按长度减速，保证有足够输入时间
+    const speed =
+      computeShooterFallSpeed(this.state.level, this.speedMultiplier, this.rng()) *
+      lengthSpeedFactor(text);
     this.state.targets.push({
       id: this.nextId++,
       text,

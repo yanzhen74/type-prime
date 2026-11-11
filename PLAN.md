@@ -443,7 +443,7 @@ type-prime/
 
 目标：把「敲键 → 炮弹飞行 → 命中 → 掉血」做成可见因果链，并让打错字符也有完整的失败反馈。全部 Canvas 2D 纯绘制，不侵入判定逻辑（hp 仍为整轮扣血）。
 
-- 头部血条（全僵尸）：剩余比例 = `(hp - shownChars/单词长度) / maxHp`（满血为 1，每命中一个字符平滑掉一格，整轮打完正好空一层）；多血僵尸破甲时 `shownChars` 归零以免跳变。血条贴头顶、携带单词上移避免重叠。纯函数 `headBarFraction(z)`。
+- 头部血条（全僵尸）：按「层」显示，当前层剩余比例 = `1 - shownChars/单词长度`（满格为 1，每命中一个字符平滑掉一格，整轮打完正好掉光一层）；多血僵尸扣血时 `shownChars` 归零且换色（坦克蓝→黄→红），血条重新满格。血条贴头顶、携带单词上移避免重叠。纯函数 `headBarFraction(z)`。
 - 坦克三段变色：`zombieBarColor(kind, hp)` —— tank 的 hp=3 蓝(护甲)/2 黄/1 红；其他类型红。
 - 植物炮台：基地线中央绘豌豆射手风格植物（茎+头+炮口），头朝当前锁定僵尸；每正确字符后坐 + muzzle flash 并发射绿色种子炮弹。
 - 炮弹命中：到达目标 → `shownChars++`、白闪 `flashUntil`、顿挫 `staggerUntil`(期间不移动)、火花 effect；目标已死亡则 fizzle 消散。
@@ -452,6 +452,15 @@ type-prime/
 - 预留音效钩子：发射/命中/击杀/哑弹处留 `onSfx?` 回调位，供后续 sound-manager 任务接线。
 - 类型扩展：`Zombie` + `shownChars/flashUntil/staggerUntil`；新增 `Projectile { id, x, y, targetId, at, miss?, char?, vx?, vy? }`；`ZombieState` + `projectiles`。
 - 测试新增约 7 用例：每正确字符生成炮弹；命中增 shownChars/血条降；坦克三段色；目标死亡 fizzle；错字符生成 miss 弹且零伤害；哑弹跳弹后触地 splat 移除；无锁定打错仍安全落地。
+
+#### 8. 含空格文本输入与长文本难度治理（已实现）
+
+背景：射击模式 `phrase`（'type fast'）、`BOSS_CONTENT`（'the quick brown fox jumps'）与僵尸 BOSS（'the plants will defend the lawn'）均含空格，但空格在 main.ts 被双重拦截（keydown 中 `e.key === ' '` 直接 preventDefault + submitWord；input 事件中 `char !== ' '` 跳过），导致 `typedIndex` 卡在空格位、这类目标永远打不完；且长句与短词同速移动，难度不合理。
+
+- 空格作为真实字符（不自动跳过，避免养成不吃空格的错误习惯）：基类新增可覆写的 `expectedChar(): string | null`（返回当前锁定目标的下一期望字符，不接受输入/未锁定时 null），三个游戏子类各自覆写；main.ts 的 keydown 中 Space 改为「期望字符是空格则 `handleChar(' ')`，否则仍 `submitWord()`」，Enter 语义不变。
+- 长文本速度补偿：基类导出纯函数 `lengthSpeedFactor(text) = clamp(8 / len, 0.4, 1)`（参考长度 8 字符以内不减速，下限 0.4 避免长句慢到失去压迫感）；单词掉落/闯关射击/僵尸大战三处 spawn 均将基础速度乘以该因子（公式纯函数签名不变，不破坏现有测试）。
+- 未采取的方案：自动吞空格（与用户「不能养成错误习惯」的要求相左）、缩短 BOSS 长句文本、降低 BOSS 血量/轮数、长句拆分为多目标（均经用户选择后排除）。
+- 测试：`lengthSpeedFactor` 边界（短词=1、9 字符=8/9、31 字符=0.4）、基类 `expectedChar` 默认 null、射击与僵尸 BOSS 长句减速断言 + 打到词间空格时 `expectedChar() === ' '` 且敲空格推进 `typedIndex`。
 
 ---
 

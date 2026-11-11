@@ -1,4 +1,4 @@
-import { GameEngine, type GameEngineOptions } from './game-engine.js';
+import { GameEngine, lengthSpeedFactor, type GameEngineOptions } from './game-engine.js';
 import type { Zombie, ZombieKind, ZombieState } from './types.js';
 
 /** 坚守多少波后判定「防守成功」 */
@@ -58,10 +58,13 @@ function zombieDims(kind: ZombieKind): { w: number; h: number } {
   }
 }
 
-/** 头部血条剩余比例：满血为 1，随本轮已命中字符逐字符降到 0 */
+/**
+ * 头部血条当前层的剩余比例：满格为 1，随本轮已命中字符逐字符降到 0。
+ * 多血僵尸按「层」显示：一层打光后扣 1 血并换色（坦克蓝→黄→红），血条重新满格。
+ */
 export function headBarFraction(z: Zombie): number {
   const progress = Math.min(z.shownChars, z.text.length) / Math.max(1, z.text.length);
-  return Math.max(0, Math.min(1, (z.hp - progress) / z.maxHp));
+  return Math.max(0, Math.min(1, 1 - progress));
 }
 
 /** 血条颜色：坦克三段（蓝护甲 / 黄 / 红），其余类型红 */
@@ -175,6 +178,13 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     this.lastSpawn = performance.now();
     // 避免暂停/重新开始后的首个大 dt 让炮弹瞬移
     this.lastUpdateAt = -1;
+  }
+
+  /** 锁定僵尸的下一个期望字符（供外层判定空格是字符还是提交） */
+  expectedChar(): string | null {
+    if (!this.acceptsInput() || this.state.lockedZombieIndex === null) return null;
+    const zombie = this.state.zombies[this.state.lockedZombieIndex];
+    return zombie ? (zombie.text[zombie.typedIndex]?.toLowerCase() ?? null) : null;
   }
 
   protected onChar(char: string): void {
@@ -312,7 +322,10 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
       provided && provided.length > 0 ? provided : pool[Math.floor(this.rng() * pool.length)];
     const padding = 60;
     const x = padding + this.rng() * (this.canvas.width - padding * 2);
-    const speed = computeZombieSpeed(kind, this.state.level, this.speedMultiplier, this.rng());
+    // BOSS 携带长句，按长度减速保证有足够输入时间
+    const speed =
+      computeZombieSpeed(kind, this.state.level, this.speedMultiplier, this.rng()) *
+      lengthSpeedFactor(text);
     this.state.zombies.push({
       id: this.nextId++,
       text,

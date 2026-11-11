@@ -1,4 +1,4 @@
-import { GameEngine } from './game-engine.js';
+import { GameEngine, lengthSpeedFactor } from './game-engine.js';
 import type { GameState } from './types.js';
 
 const VOCABULARY = [
@@ -123,6 +123,13 @@ export class FallingWordGame extends GameEngine<GameState> {
     this.lastSpawn = performance.now();
   }
 
+  /** 锁定单词的下一个期望字符（供外层判定空格是字符还是提交） */
+  expectedChar(): string | null {
+    if (!this.acceptsInput() || this.state.lockedWordIndex === null) return null;
+    const word = this.state.words[this.state.lockedWordIndex];
+    return word ? (word.text[word.typedIndex]?.toLowerCase() ?? null) : null;
+  }
+
   protected onChar(char: string): void {
     // 自动锁定：优先匹配位置最低（最紧急）且以当前字符开头的单词
     if (this.state.lockedWordIndex === null) {
@@ -231,7 +238,10 @@ export class FallingWordGame extends GameEngine<GameState> {
         : VOCABULARY[Math.floor(Math.random() * VOCABULARY.length)];
     const padding = 60;
     const x = padding + Math.random() * (this.canvas.width - padding * 2);
-    const speed = computeFallSpeed(this.state.level, this.speedMultiplier, Math.random());
+    // 长文本（词库短语/句子）按长度减速，保证有足够输入时间
+    const speed =
+      computeFallSpeed(this.state.level, this.speedMultiplier, Math.random()) *
+      lengthSpeedFactor(text);
     this.state.words.push({ text, x, y: 0, speed, typedIndex: 0 });
   }
 

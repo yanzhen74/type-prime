@@ -3,9 +3,11 @@ import {
   TypingShooterGame,
   contentKindForLevel,
   computeShooterSpawnInterval,
+  computeShooterFallSpeed,
   SHOOTER_CONTENT,
   BOSS_CONTENT,
 } from './typing-shooter-game.js';
+import { lengthSpeedFactor } from './game-engine.js';
 import type { ShooterState } from './types.js';
 
 /** 测试子类：暴露状态与受保护方法，避免依赖 rAF/假计时器驱动循环 */
@@ -187,5 +189,28 @@ describe('TypingShooterGame', () => {
     }
     expect(game.isRunning()).toBe(false);
     expect(overScore).toBe(game.s.score);
+  });
+
+  it('BOSS 长句按长度减速，且词间空格可作为字符输入', () => {
+    const game = makeGame();
+    game.forceRunning();
+    game.s.level = 4;
+    game.s.targetsClearedThisLevel = 7; // 本关最后一个目标 → BOSS
+    game.spawn();
+
+    const boss = game.s.targets[game.s.targets.length - 1];
+    expect(boss.kind).toBe('boss');
+    expect(lengthSpeedFactor(boss.text)).toBeLessThan(1);
+    expect(boss.speed).toBeCloseTo(computeShooterFallSpeed(4, 1, 0) * lengthSpeedFactor(boss.text));
+
+    // 打到第一个词间空格：未锁定时 expectedChar 为 null，锁定后指向空格
+    const spaceAt = boss.text.indexOf(' ');
+    expect(game.expectedChar()).toBeNull();
+    for (const ch of boss.text.slice(0, spaceAt)) game.handleChar(ch);
+    expect(game.expectedChar()).toBe(' ');
+
+    game.handleChar(' ');
+    expect(boss.typedIndex).toBe(spaceAt + 1);
+    expect(game.expectedChar()).toBe(boss.text[spaceAt + 1].toLowerCase());
   });
 });
