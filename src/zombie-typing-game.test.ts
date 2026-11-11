@@ -211,6 +211,7 @@ describe('ZombieTypingGame', () => {
     game.forceRunning();
     game.spawn('normal');
     game.tick(0);
+    expect(headBarFraction(game.s.zombies[0])).toBe(1); // 满血为 1
     game.handleChar(game.s.zombies[0].text[0]);
     game.tick(0);
     game.tick(1000); // 大 dt 保证飞抵目标
@@ -218,6 +219,29 @@ describe('ZombieTypingGame', () => {
     const z = game.s.zombies[0];
     expect(z.shownChars).toBe(1);
     expect(headBarFraction(z)).toBeLessThan(1);
+  });
+
+  it('血条逐字符单调下降，多血僵尸跨轮衔接不跳变', () => {
+    const game = makeGame();
+    game.forceRunning();
+    game.spawn('tank');
+    const z = game.s.zombies[0];
+    const word = z.text;
+    expect(headBarFraction(z)).toBe(1);
+
+    z.shownChars = 1; // 模拟一发炮弹命中
+    expect(headBarFraction(z)).toBeCloseTo((3 - 1 / word.length) / 3);
+
+    typeFull(game, word); // 打完第一轮：破甲但不清零血条层级
+    expect(z.hp).toBe(2);
+    expect(z.shownChars).toBe(0);
+    expect(headBarFraction(z)).toBeCloseTo(2 / 3);
+
+    typeFull(game, word);
+    expect(headBarFraction(z)).toBeCloseTo(1 / 3);
+
+    typeFull(game, word); // 击杀
+    expect(game.s.zombies).toEqual([]);
   });
 
   it('坦克血条三段变色（蓝/黄/红），其余类型红', () => {

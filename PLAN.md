@@ -443,7 +443,7 @@ type-prime/
 
 目标：把「敲键 → 炮弹飞行 → 命中 → 掉血」做成可见因果链，并让打错字符也有完整的失败反馈。全部 Canvas 2D 纯绘制，不侵入判定逻辑（hp 仍为整轮扣血）。
 
-- 头部血条（全僵尸）：显示比例 = `(hp - 1 + shownChars/单词长度) / maxHp`，每命中一个字符平滑掉一格；血条贴头顶、携带单词上移避免重叠。纯函数 `headBarFraction(z)`。
+- 头部血条（全僵尸）：剩余比例 = `(hp - shownChars/单词长度) / maxHp`（满血为 1，每命中一个字符平滑掉一格，整轮打完正好空一层）；多血僵尸破甲时 `shownChars` 归零以免跳变。血条贴头顶、携带单词上移避免重叠。纯函数 `headBarFraction(z)`。
 - 坦克三段变色：`zombieBarColor(kind, hp)` —— tank 的 hp=3 蓝(护甲)/2 黄/1 红；其他类型红。
 - 植物炮台：基地线中央绘豌豆射手风格植物（茎+头+炮口），头朝当前锁定僵尸；每正确字符后坐 + muzzle flash 并发射绿色种子炮弹。
 - 炮弹命中：到达目标 → `shownChars++`、白闪 `flashUntil`、顿挫 `staggerUntil`(期间不移动)、火花 effect；目标已死亡则 fizzle 消散。

@@ -58,10 +58,10 @@ function zombieDims(kind: ZombieKind): { w: number; h: number } {
   }
 }
 
-/** 头部血条显示比例（含本轮已命中字符的平滑掉血） */
+/** 头部血条剩余比例：满血为 1，随本轮已命中字符逐字符降到 0 */
 export function headBarFraction(z: Zombie): number {
   const progress = Math.min(z.shownChars, z.text.length) / Math.max(1, z.text.length);
-  return Math.max(0, Math.min(1, (z.hp - 1 + progress) / z.maxHp));
+  return Math.max(0, Math.min(1, (z.hp - progress) / z.maxHp));
 }
 
 /** 血条颜色：坦克三段（蓝护甲 / 黄 / 红），其余类型红 */
@@ -244,6 +244,8 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     zombie.hp -= 1;
     if (zombie.hp > 0) {
       zombie.typedIndex = 0;
+      // 新一轮输入：血条显示从当前层的满格重新开始掉，避免破甲瞬间多掉一层
+      zombie.shownChars = 0;
       this.state.currentInput = '';
       this.state.score += 5;
       this.emitUpdate();
