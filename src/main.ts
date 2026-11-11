@@ -401,10 +401,12 @@ class App {
     }
   }
 
-  /** 顶栏用户控件交互结束后，把焦点交还给训练输入框（仅当仍处于训练面板） */
+  /** 顶栏用户控件交互结束后交还焦点：训练面板回训练输入框，游戏面板回游戏输入框 */
   private releaseUserControlFocus(): void {
     if (this.isTrainPanelActive()) {
       this.focusTrainInput();
+    } else if (this.isGamePanelActive()) {
+      this.focusGameInput();
     }
   }
 
@@ -465,11 +467,12 @@ class App {
       this.gameInput.value = '';
     });
 
-    // 防止输入框失去焦点后无法接收输入（设置控件持有焦点时不抢回，避免打断下拉操作）
+    // 防止输入框失去焦点后无法接收输入（设置控件持有焦点或模态对话框打开时不抢回，
+    // 避免打断下拉操作或抢走对话框输入框焦点）
     this.gameInput.addEventListener('blur', () => {
       if (this.isGamePanelActive()) {
         window.setTimeout(() => {
-          if (this.isGamePanelActive() && !this.gameControlFocused) {
+          if (this.isGamePanelActive() && !this.gameControlFocused && !this.dialog.isOpen()) {
             this.focusGameInput();
           }
         }, 0);
