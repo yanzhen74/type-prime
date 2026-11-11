@@ -4,6 +4,9 @@ import {
   waveComposition,
   computeZombieSpawnInterval,
   computeZombieSpeed,
+  headBarFraction,
+  zombieBarColor,
+  ZOMBIE_HP,
   ZOMBIE_WORDS,
 } from './zombie-typing-game.js';
 import type { ZombieKind, ZombieState } from './types.js';
@@ -190,5 +193,93 @@ describe('ZombieTypingGame', () => {
     expect(game.s.victory).toBe(true);
     expect(game.isRunning()).toBe(false);
     expect(over).toBe(game.s.score);
+  });
+
+  it('每正确字符发射一枚实弹', () => {
+    const game = makeGame();
+    game.forceRunning();
+    game.spawn('normal');
+    game.handleChar(game.s.zombies[0].text[0]);
+
+    expect(game.s.projectiles).toHaveLength(1);
+    expect(game.s.projectiles[0].miss).toBeFalsy();
+    expect(game.s.projectiles[0].targetId).toBe(game.s.zombies[0].id);
+  });
+
+  it('炮弹命中后 shownChars 增、头部血条比例下降', () => {
+    const game = makeGame();
+    game.forceRunning();
+    game.spawn('normal');
+    game.tick(0);
+    game.handleChar(game.s.zombies[0].text[0]);
+    game.tick(0);
+    game.tick(1000); // 大 dt 保证飞抵目标
+
+    const z = game.s.zombies[0];
+    expect(z.shownChars).toBe(1);
+    expect(headBarFraction(z)).toBeLessThan(1);
+  });
+
+  it('坦克血条三段变色（蓝/黄/红），其余类型红', () => {
+    expect(zombieBarColor('tank', 3)).toBe('#38bdf8');
+    expect(zombieBarColor('tank', 2)).toBe('#facc15');
+    expect(zombieBarColor('tank', 1)).toBe('#ef4444');
+    expect(zombieBarColor('normal', 1)).toBe('#ef4444');
+    expect(zombieBarColor('boss', 5)).toBe('#ef4444');
+  });
+
+  it('目标被击杀后在飞实弹 fizzle 移除', () => {
+    const game = makeGame();
+    game.forceRunning();
+    game.spawn('normal');
+    const word = game.s.zombies[0].text;
+
+    game.handleChar(word[0]); // 产生一枚在飞实弹
+    typeFull(game, word.slice(1)); // 打完剩余字符击杀
+    expect(game.s.zombies).toEqual([]);
+
+    game.tick(0);
+    game.tick(1000);
+    expect(game.s.projectiles).toEqual([]);
+  });
+
+  it('打错字符发射 miss 哑弹：零伤害，跳弹后落地移除并飘 ✗错字符', () => {
+    const game = makeGame();
+    game.forceRunning();
+    game.spawn('normal');
+    const word = game.s.zombies[0].text;
+    game.handleChar(word[0]); // 先锁定目标（同时发出一枚实弹）
+    const wrong = word[1] === 'z' ? 'y' : 'z';
+
+    game.handleChar(wrong);
+    expect(game.s.projectiles).toHaveLength(2);
+    const dud = game.s.projectiles[1];
+    expect(dud.miss).toBe(true);
+    expect(dud.char).toBe(wrong);
+    expect(dud.targetId).toBe(game.s.zombies[0].id);
+
+    game.tick(0);
+    game.tick(1000); // 实弹命中、哑弹接触跳弹
+    expect(game.s.zombies[0].shownChars).toBe(1);
+    expect(game.s.zombies[0].hp).toBe(ZOMBIE_HP.normal); // 哑弹零伤害
+    expect(game.s.effects.some((e) => e.text === `✗${wrong}`)).toBe(true);
+
+    game.tick(2000); // 跳弹下坠 / 超 TTL 后 splat 移除
+    expect(game.s.projectiles).toEqual([]);
+  });
+
+  it('无锁定目标时打错仍发射哑弹并安全落空', () => {
+    const game = makeGame();
+    game.forceRunning();
+
+    game.handleChar('a');
+    expect(game.s.projectiles).toHaveLength(1);
+    expect(game.s.projectiles[0].targetId).toBe(-1);
+    expect(game.s.mistakes).toBe(1);
+
+    game.tick(0);
+    game.tick(1000);
+    game.tick(2000);
+    expect(game.s.projectiles).toEqual([]);
   });
 });

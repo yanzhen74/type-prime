@@ -88,6 +88,28 @@ export interface Zombie {
   speed: number;
   hp: number;
   maxHp: number;
+  /** 已被炮弹命中的字符数（仅表现层，驱动头部血条逐字符掉血） */
+  shownChars: number;
+  /** 命中白闪截止时间戳 */
+  flashUntil?: number;
+  /** 命中顿挫（暂停移动）截止时间戳 */
+  staggerUntil?: number;
+}
+
+/** 植物炮台发射的炮弹（miss 为打错字符的哑弹） */
+export interface Projectile {
+  id: number;
+  x: number;
+  y: number;
+  /** 目标僵尸 id；-1 表示无目标（注定落空） */
+  targetId: number;
+  at: number;
+  miss?: boolean;
+  /** 哑弹携带的错字符，用于 ✗ 飘字 */
+  char?: string;
+  /** 跳弹后的物理速度（px/ms） */
+  vx?: number;
+  vy?: number;
 }
 
 /** 僵尸大战游戏状态 */
@@ -107,6 +129,8 @@ export interface ZombieState extends GameBaseState {
   freezeUntil?: number;
   victory?: boolean;
   levelClearFlashAt?: number;
+  /** 植物炮台炮弹 */
+  projectiles: Projectile[];
   /** 击杀/道具浮动提示 */
   effects: { x: number; y: number; at: number; text: string }[];
 }

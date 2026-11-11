@@ -16,6 +16,12 @@ const ITEM_CHANCE = 0.25;
 const FREEZE_MS = 2000;
 /** 击杀/道具提示存活时长（ms） */
 const EFFECT_TTL = 800;
+/** 炮弹飞行速度（px/ms） */
+const PROJECTILE_SPEED = 1.2;
+/** 炮弹存活上限（ms） */
+const PROJECTILE_TTL = 1500;
+/** 跳弹重力加速度（px/ms²） */
+const PROJECTILE_GRAVITY = 0.004;
 
 /** 各类型僵尸属性：生命 / 触底伤害 / 基础速度 */
 export const ZOMBIE_HP: Record<ZombieKind, number> = { normal: 1, fast: 1, tank: 3, boss: 5 };
@@ -52,9 +58,26 @@ function zombieDims(kind: ZombieKind): { w: number; h: number } {
   }
 }
 
+/** 头部血条显示比例（含本轮已命中字符的平滑掉血） */
+export function headBarFraction(z: Zombie): number {
+  const progress = Math.min(z.shownChars, z.text.length) / Math.max(1, z.text.length);
+  return Math.max(0, Math.min(1, (z.hp - 1 + progress) / z.maxHp));
+}
+
+/** 血条颜色：坦克三段（蓝护甲 / 黄 / 红），其余类型红 */
+export function zombieBarColor(kind: ZombieKind, hp: number): string {
+  if (kind === 'tank') {
+    return hp >= 3 ? '#38bdf8' : hp === 2 ? '#facc15' : '#ef4444';
+  }
+  return '#ef4444';
+}
+
 /** 道具类型：修复基地 / 冻结全场 / 直接加分 */
 export type ZombieItem = 'heal' | 'freeze' | 'score';
 const ITEMS: ZombieItem[] = ['heal', 'freeze', 'score'];
+
+/** 音效钩子事件名（预留给 sound-manager） */
+export type ZombieSfx = 'shoot' | 'hit' | 'kill' | 'miss' | 'miss-hit' | 'splat';
 
 /**
  * 波次组成（抽为纯函数便于测试）。
@@ -91,10 +114,11 @@ export function computeZombieSpawnInterval(wave: number): number {
   return Math.max(SPAWN_FLOOR, SPAWN_BASE - wave * SPAWN_PER_WAVE);
 }
 
-/** 僵尸大战选项：通用选项 + 确定性随机源 + 可选词源 */
+/** 僵尸大战选项：通用选项 + 确定性随机源 + 可选词源 + 音效钩子 */
 export interface ZombieOptions extends GameEngineOptions {
   rng?: () => number;
   wordProvider?: () => string;
+  onSfx?: (name: ZombieSfx) => void;
 }
 
 /**
@@ -108,8 +132,15 @@ export interface ZombieOptions extends GameEngineOptions {
 export class ZombieTypingGame extends GameEngine<ZombieState> {
   private readonly rng: () => number;
   private readonly wordProvider?: () => string;
+  private readonly sfx?: (name: ZombieSfx) => void;
   private lastSpawn = 0;
   private nextId = 1;
+  private nextProjectileId = 1;
+  private plantRecoilAt = -1;
+  private misfireStreak = 0;
+  private lastUpdateAt = -1;
+  /** 最近一次 update 的时间戳（供炮弹 TTL 等帧内计时使用） */
+  private frameNow = 0;
 
   constructor(
     canvasId: string,
@@ -120,6 +151,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     super(canvasId, { onUpdate, onGameOver }, options);
     this.rng = options.rng ?? Math.random;
     this.wordProvider = options.wordProvider;
+    this.sfx = options.onSfx;
   }
 
   protected createState(): ZombieState {
@@ -134,12 +166,15 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
       items: 0,
       wavesCleared: 0,
       victory: false,
+      projectiles: [],
       effects: [],
     };
   }
 
   protected onResume(): void {
     this.lastSpawn = performance.now();
+    // 避免暂停/重新开始后的首个大 dt 让炮弹瞬移
+    this.lastUpdateAt = -1;
   }
 
   protected onChar(char: string): void {
@@ -147,6 +182,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
       const match = this.findMatchingZombie(char);
       if (match === null) {
         this.recordError(char);
+        this.fireProjectile(-1, true, char);
         this.emitUpdate();
         return;
       }
@@ -160,6 +196,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     if (char === expected) {
       zombie.typedIndex += 1;
       this.state.currentInput += char;
+      this.fireProjectile(zombie.id, false);
       if (zombie.typedIndex >= zombie.text.length) {
         this.hitZombie(this.state.lockedZombieIndex);
       } else {
@@ -167,6 +204,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
       }
     } else {
       this.recordError(char);
+      this.fireProjectile(zombie.id, true, char);
       this.emitUpdate();
     }
   }
@@ -215,6 +253,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     this.state.score += zombie.text.length * 10 + this.state.level * 5;
     this.state.kills += 1;
     this.state.effects.push({ x: zombie.x, y: zombie.y, at: performance.now(), text: '💥' });
+    this.sfx?.('kill');
     this.rollItem(zombie.x, zombie.y);
 
     this.state.zombies.splice(index, 1);
@@ -282,10 +321,12 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
       speed,
       hp: ZOMBIE_HP[kind],
       maxHp: ZOMBIE_HP[kind],
+      shownChars: 0,
     });
   }
 
   protected update(now: number): void {
+    this.frameNow = now;
     const frozen = this.state.freezeUntil !== undefined && now < this.state.freezeUntil;
 
     if (
@@ -298,11 +339,20 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     }
 
     this.state.effects = this.state.effects.filter((e) => now - e.at < EFFECT_TTL);
+
+    // 炮弹飞行与命中/跳弹/落地（冻结期间仍飞行）
+    const dt = this.lastUpdateAt < 0 ? 0 : now - this.lastUpdateAt;
+    this.lastUpdateAt = now;
+    this.updateProjectiles(now, dt);
+
     if (frozen) return;
 
     for (let i = this.state.zombies.length - 1; i >= 0; i--) {
       const z = this.state.zombies[i];
-      z.y += z.speed;
+      // 命中顿挫期间暂停移动
+      if (z.staggerUntil === undefined || now >= z.staggerUntil) {
+        z.y += z.speed;
+      }
 
       if (z.y > this.canvas.height - 30) {
         this.state.zombies.splice(i, 1);
@@ -324,6 +374,163 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
 
     // 本波僵尸全部触底（未被击杀）也须推进波次，否则会卡住不再出怪
     this.checkWaveClear();
+  }
+
+  /** 植物炮台位置（基地线上方居中） */
+  private plantPos(): { x: number; y: number } {
+    return { x: this.canvas.width / 2, y: this.canvas.height - 30 - 16 };
+  }
+
+  /** 发射炮弹：miss 为打错字符的哑弹；targetId=-1 表示无目标注定落空 */
+  private fireProjectile(targetId: number, miss: boolean, char?: string): void {
+    const plant = this.plantPos();
+    this.state.projectiles.push({
+      id: this.nextProjectileId++,
+      x: plant.x,
+      y: plant.y - 16,
+      targetId,
+      at: this.frameNow,
+      miss,
+      char,
+    });
+    this.plantRecoilAt = performance.now();
+    this.misfireStreak = miss ? this.misfireStreak + 1 : 0;
+    this.sfx?.(miss ? 'miss' : 'shoot');
+  }
+
+  /** 炮弹模拟：追踪命中 / 哑弹跳弹 / 触地 splat / 目标死亡 fizzle */
+  private updateProjectiles(now: number, dt: number): void {
+    const ground = this.canvas.height - 30;
+    for (let i = this.state.projectiles.length - 1; i >= 0; i--) {
+      const p = this.state.projectiles[i];
+      const target = this.state.zombies.find((z) => z.id === p.targetId);
+
+      // 跳弹/落空物理
+      if (p.vx !== undefined && p.vy !== undefined) {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += PROJECTILE_GRAVITY * dt;
+        if (p.y >= ground || now - p.at > PROJECTILE_TTL) {
+          this.state.effects.push({
+            x: p.x,
+            y: Math.min(p.y, ground),
+            at: now,
+            text: this.rng() < 0.15 ? '🥀' : '💨',
+          });
+          this.state.projectiles.splice(i, 1);
+          this.sfx?.('splat');
+        }
+        continue;
+      }
+
+      // 无目标：哑弹抛出注定落空；实弹目标已死亡则 fizzle
+      if (!target) {
+        if (p.miss) {
+          p.vx = 0.25;
+          p.vy = -0.45;
+        } else {
+          this.state.projectiles.splice(i, 1);
+        }
+        continue;
+      }
+
+      // 追踪目标
+      const dx = target.x - p.x;
+      const dy = target.y - p.y;
+      const dist = Math.hypot(dx, dy);
+      const step = PROJECTILE_SPEED * dt;
+      if (dist <= step + 6) {
+        if (p.miss) {
+          // 接触但零伤害：跳弹 + ✗错字符飘字
+          p.vx = dx >= 0 ? -0.3 : 0.3;
+          p.vy = -0.4;
+          target.staggerUntil = now + 80;
+          this.state.effects.push({ x: target.x, y: target.y, at: now, text: `✗${p.char ?? ''}` });
+          this.sfx?.('miss-hit');
+        } else {
+          target.shownChars = Math.min(target.shownChars + 1, target.text.length);
+          target.flashUntil = now + 120;
+          target.staggerUntil = now + 60;
+          this.state.effects.push({ x: target.x, y: target.y, at: now, text: '✦' });
+          this.state.projectiles.splice(i, 1);
+          this.sfx?.('hit');
+        }
+      } else {
+        p.x += (dx / dist) * step;
+        p.y += (dy / dist) * step;
+      }
+    }
+  }
+
+  /** 绘制植物炮台：茎+朝目标的头+炮口，含后坐与 muzzle flash */
+  private drawPlant(now: number): void {
+    const ctx = this.ctx;
+    const { x, y } = this.plantPos();
+    const locked =
+      this.state.lockedZombieIndex !== null
+        ? this.state.zombies[this.state.lockedZombieIndex]
+        : undefined;
+    const aim = locked ? Math.atan2(locked.y - y, locked.x - x) : -Math.PI / 2;
+    const sinceFire = now - this.plantRecoilAt;
+    const recoil =
+      sinceFire >= 0 && sinceFire < 120 ? (1 - sinceFire / 120) * (4 + this.misfireStreak * 2) : 0;
+
+    // 茎
+    ctx.strokeStyle = '#16a34a';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(x, this.canvas.height - 30);
+    ctx.lineTo(x, y + 6);
+    ctx.stroke();
+
+    // 头（朝目标，含后坐）
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(aim + Math.PI / 2);
+    ctx.translate(0, recoil);
+    ctx.fillStyle = '#22c55e';
+    ctx.beginPath();
+    ctx.arc(0, 0, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#15803d';
+    ctx.fillRect(-4, -18, 8, 10);
+    if (sinceFire >= 0 && sinceFire < 80) {
+      ctx.fillStyle = 'rgba(253, 224, 71, 0.8)';
+      ctx.beginPath();
+      ctx.arc(0, -20, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 连续打错的灰烟
+    if (this.misfireStreak > 0 && sinceFire >= 0 && sinceFire < 300) {
+      ctx.fillStyle = `rgba(148, 163, 184, ${0.5 - sinceFire / 600})`;
+      ctx.beginPath();
+      ctx.arc(x + 8, y - 14, 4 + this.misfireStreak, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /** 绘制炮弹：实弹绿+光尾，哑弹灰+烟尾 */
+  private drawProjectiles(): void {
+    const ctx = this.ctx;
+    for (const p of this.state.projectiles) {
+      const deflected = p.vx !== undefined;
+      ctx.fillStyle = p.miss ? '#94a3b8' : '#a3e635';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.miss ? 4 : 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = p.miss ? 'rgba(148, 163, 184, 0.5)' : 'rgba(163, 230, 53, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      if (deflected) {
+        ctx.lineTo(p.x - (p.vx ?? 0) * 40, p.y - (p.vy ?? 0) * 40);
+      } else {
+        ctx.lineTo(p.x, p.y + 10);
+      }
+      ctx.stroke();
+    }
   }
 
   protected draw(): void {
@@ -360,6 +567,9 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     ctx.textBaseline = 'bottom';
     ctx.fillText(`基地血量: ${this.state.lives}`, 12, height - 36);
 
+    // 植物炮台
+    this.drawPlant(now);
+
     // 浮动提示
     for (const e of this.state.effects) {
       const t = (now - e.at) / EFFECT_TTL;
@@ -389,19 +599,28 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
       const fullWidth = ctx.measureText(z.text).width;
       const typedWidth = ctx.measureText(typed).width;
       const startX = z.x - fullWidth / 2;
-      const textY = z.y - bodyH / 2 - 14;
+      const textY = z.y - bodyH / 2 - 24;
       ctx.fillStyle = errorLocked ? '#f43f5e' : '#22c55e';
       ctx.fillText(typed, startX + typedWidth / 2, textY);
       ctx.fillStyle = errorLocked ? '#fca5a5' : '#f8fafc';
       ctx.fillText(untyped, startX + typedWidth + ctx.measureText(untyped).width / 2, textY);
 
-      // 血条（多血僵尸）
-      if (z.maxHp > 1) {
-        const hpW = bodyW * (z.hp / z.maxHp);
-        ctx.fillStyle = '#f43f5e';
-        ctx.fillRect(z.x - bodyW / 2, z.y - bodyH / 2 - 6, hpW, 4);
+      // 头部血条（全僵尸，逐字符平滑掉血；坦克三段变色）
+      const barY = z.y - bodyH / 2 - 12;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
+      ctx.fillRect(z.x - bodyW / 2, barY, bodyW, 4);
+      ctx.fillStyle = zombieBarColor(z.kind, z.hp);
+      ctx.fillRect(z.x - bodyW / 2, barY, bodyW * headBarFraction(z), 4);
+
+      // 命中白闪
+      if (z.flashUntil !== undefined && now < z.flashUntil) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.fillRect(z.x - bodyW / 2, z.y - bodyH / 2, bodyW, bodyH);
       }
     }
+
+    // 炮弹
+    this.drawProjectiles();
 
     // 错误字符标注
     if (errorActive && lastError) {
