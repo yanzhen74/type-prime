@@ -425,6 +425,34 @@ type-prime/
 - 游戏引擎状态机测试。
 - 闯关射击与僵尸大战的输入匹配、关卡/波次、结算测试。
 
+#### 6. 游戏面板设置全键盘化（交互增强，待实现）
+
+目标：游戏面板的设置项（模式/起始等级/速度倍率/词源）全部可用快捷键调整，维持全键盘无鼠标。
+
+- 快捷键映射（仅游戏面板激活时生效，capture 阶段拦截并 preventDefault/stopPropagation）：
+  - `Ctrl+Shift+1/2/3`：切换游戏模式（单词掉落 / 闯关射击 / 僵尸大战）。
+  - `Ctrl+↑ / Ctrl+↓`：起始等级 +1 / −1，1–10 循环。
+  - `Ctrl+← / Ctrl+→`：速度倍率 降 / 升，在 0.5/0.75/1/1.5/2 间循环。
+  - `Ctrl+Shift+4`：切换词源（内置词表 ↔ 词库单词），仅单词掉落模式有效；射击/僵尸下该下拉本就禁用，快捷键为 no-op。
+- 冲突分析：`Ctrl+↑↓`/`Ctrl+←→` 现仅被训练面板绑定且 TrainPanel 内部已按 `isPanelActive()` 门控，游戏面板激活时空闲，无冲突；`Ctrl+Shift+数字` 命名空间已验证避开浏览器保留键。
+- 生效语义：统一走现有 `handleGameSettingChange()`（持久化 typeprime_game_settings + 重建游戏实例，等价设置变更后自动重置当前局）；触发后同步刷新对应 select 显示值并把焦点交还 #game-input。
+- 反馈与可发现性：触发后在设置行提示位闪现当前值约 1.5s；每个设置项旁加 kbd 标注；F1 帮助弹窗与底部提示栏补对应行，并将原「Ctrl+Shift+1/2/3 切换键位/单词/文章练习」加注「训练面板」以消除同名快捷键歧义。
+- 边界：焦点在 select/textarea 时同样生效（与现有 Ctrl+1/2/3 一致）；命中即 stopPropagation 防止方向键泄漏进输入框或触发 caret 跳词。
+
+#### 7. 僵尸大战打击反馈增强（待实现）
+
+目标：把「敲键 → 炮弹飞行 → 命中 → 掉血」做成可见因果链，并让打错字符也有完整的失败反馈。全部 Canvas 2D 纯绘制，不侵入判定逻辑（hp 仍为整轮扣血）。
+
+- 头部血条（全僵尸）：显示比例 = `(hp - 1 + shownChars/单词长度) / maxHp`，每命中一个字符平滑掉一格；血条贴头顶、携带单词上移避免重叠。纯函数 `headBarFraction(z)`。
+- 坦克三段变色：`zombieBarColor(kind, hp)` —— tank 的 hp=3 蓝(护甲)/2 黄/1 红；其他类型红。
+- 植物炮台：基地线中央绘豌豆射手风格植物（茎+头+炮口），头朝当前锁定僵尸；每正确字符后坐 + muzzle flash 并发射绿色种子炮弹。
+- 炮弹命中：到达目标 → `shownChars++`、白闪 `flashUntil`、顿挫 `staggerUntil`(期间不移动)、火花 effect；目标已死亡则 fizzle 消散。
+- Missed 哑弹（打错字符）：发射灰色哑弹(`miss:true`, 携带 `char`)；有锁定目标则朝其飞，接触时**零伤害**跳弹（速度反射 + 重力 `vx/vy` 下坠）+ 灰火花 + `✗<错字符>` 飘字；无锁定目标则斜上飞出注定落空；触地或超 TTL 时 splat 灰雾移除。逻辑层仍只走 recordError(mistakes++)。
+- 趣味增强：连续打错时植物后坐幅度递增（打对重置）；哑弹落地小概率（rng 可注入）长出蔫花彩蛋，纯装饰。
+- 预留音效钩子：发射/命中/击杀/哑弹处留 `onSfx?` 回调位，供后续 sound-manager 任务接线。
+- 类型扩展：`Zombie` + `shownChars/flashUntil/staggerUntil`；新增 `Projectile { id, x, y, targetId, at, miss?, char?, vx?, vy? }`；`ZombieState` + `projectiles`。
+- 测试新增约 7 用例：每正确字符生成炮弹；命中增 shownChars/血条降；坦克三段色；目标死亡 fizzle；错字符生成 miss 弹且零伤害；哑弹跳弹后触地 splat 移除；无锁定打错仍安全落地。
+
 ---
 
 ## 11. 词库管理方案
