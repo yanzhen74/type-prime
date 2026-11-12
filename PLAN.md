@@ -420,10 +420,11 @@ type-prime/
 - 主题切换、键盘动画、Canvas 分层渲染。
 - 可选 WebGL/PixiJS 评估。
 
-#### 5. 测试
+#### 5. 测试（已覆盖）
 
 - 游戏引擎状态机测试。
 - 闯关射击与僵尸大战的输入匹配、关卡/波次、结算测试。
+- 现状：上述范围已随各项任务逐步落地（`game-engine.test.ts` / `game.test.ts` / `typing-shooter-game.test.ts` / `zombie-typing-game.test.ts`），基线 13 个测试文件共 135 用例全绿；后续新增能力遵循同样口径补测试。
 
 #### 6. 游戏面板设置全键盘化（交互增强，已实现）
 

@@ -154,7 +154,10 @@
 3. ✅ 新建 `src/zombie-typing-game.ts`（`ZombieTypingGame`）：波次系统、基地血量、普通 / 快速 / 坦克 / BOSS 僵尸、道具、结算页；复用 `FallingWordGame` 的目标锁定与单词进度逻辑。
 4. ✅ 僵尸造型改进（用户手动测试后反馈：当前僵尸仅为色块方框，不够形象）：在 `src/zombie-typing-game.ts` 的 `draw()` 中为四类僵尸绘制可辨识的造型（头/躯干/手臂/腿部轮廓或简笔精灵），普通/快速/坦克/BOSS 在体型、配色、细节上有明显区分；行走时可加轻微摆动/步态动画；保持 Canvas 2D 纯绘制、不引入图片资源与额外依赖；造型不得遮挡携带单词与血条的显示。
 5. ⬜ 表现层打磨：`src/sound-manager.ts`、`src/particle-system.ts`、主题与 Canvas 分层渲染。
-6. ⬜ 测试：游戏引擎状态机、输入匹配、关卡 / 波次与结算测试。
+6. ✅ 测试：游戏引擎状态机、输入匹配、关卡 / 波次与结算测试（随任务 1–4、8、9 逐步补齐，已核对覆盖面）：
+   - 状态机：`src/game-engine.test.ts` —— start 倒计时与输入门控、pause/resume、reset、attachInput 路由、gameOver 回调、`lengthSpeedFactor` 边界、基类 `expectedChar` 默认值。
+   - 输入匹配与关卡/波次：`src/game.test.ts`（难度纯函数 + 起始等级接线）、`src/typing-shooter-game.test.ts`（内容分级、出怪间隔、连击/失误/Backspace、BOSS 三轮与升关、触底扣命与结算、长句减速与空格）、`src/zombie-typing-game.test.ts`（波次构成、出怪间隔与速度、普通/坦克击杀、触底扣血、双入口波次推进、道具回补、坚守 8 波结算、打击反馈与哑弹）。
+   - 基线：13 个测试文件共 135 用例全绿，`npm run build` / `lint` / `format:check` 同步通过。
 7. ✅ 游戏面板设置全键盘化：`Ctrl+Shift+1/2/3` 切换模式、`Ctrl+↑/↓` 起始等级(1–10循环)、`Ctrl+←/→` 速度倍率(0.5/0.75/1/1.5/2循环)、`Ctrl+Shift+4` 切换词源(仅单词掉落，其余模式为提示型 no-op)；仅游戏面板激活生效，走 handleGameSettingChange 重建实例，触发后在设置行闪现当前值 1.5s 并同步 kbd 标注/F1 帮助弹窗/底部提示栏。模式与词源用 `e.code` 判定避开 Shift 布局差异。已经浏览器实测全部生效且与训练面板同名快捷键互不干扰。详细设计见 PLAN.md §10.6。
 8. ✅ 僵尸大战打击反馈增强：全僵尸头部血条(按层显示、逐字符平滑掉光) + 坦克三段变色(满蓝打光→满黄→满红) + 基地植物炮台(每正确字符发射种子炮弹，命中白闪/顿挫/火花) + 打错字符发射 missed 灰哑弹(跳弹零伤害/落地 splat/✗错字符飘字) + 预留音效钩子。详细设计见 PLAN.md §10.7。
 9. ✅ 含空格文本输入与长文本难度治理：空格不再被拦截，当锁定目标的下一期望字符是空格时作为真实字符输入（否则仍为提交）；长句按 `lengthSpeedFactor` 减速，三个游戏模式统一生效；僵尸 BOSS 另下调为 3 轮输入且基础速度取原值 3/4。详见 PLAN.md §10.8。
