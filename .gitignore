@@ -11,3 +11,7 @@ coverage/
 01-page-loaded.png
 04-article-practice-tab.png
 release/
+# 个人编辑器配置（调试启动项等）
+.vscode/
+# 浏览器验证临时截图
+verify-*.png
