@@ -187,13 +187,13 @@
             <span>准确率：<strong id="accuracy">100%</strong></span>
           </div>
           <div class="game-settings">
-            <label for="game-mode">模式：</label>
+            <label for="game-mode">模式 <kbd>Ctrl+Shift+1/2/3</kbd>：</label>
             <select id="game-mode">
               <option value="falling">单词掉落</option>
               <option value="shooter">闯关射击</option>
               <option value="zombie">僵尸大战</option>
             </select>
-            <label for="game-start-level">起始等级：</label>
+            <label for="game-start-level">起始等级 <kbd>Ctrl+↑↓</kbd>：</label>
             <select id="game-start-level">
               <option value="1">1</option>
               <option value="2">2</option>
@@ -206,7 +206,7 @@
               <option value="9">9</option>
               <option value="10">10</option>
             </select>
-            <label for="game-speed">速度倍率：</label>
+            <label for="game-speed">速度倍率 <kbd>Ctrl+←/→</kbd>：</label>
             <select id="game-speed">
               <option value="0.5">0.5x</option>
               <option value="0.75">0.75x</option>
@@ -214,12 +214,12 @@
               <option value="1.5">1.5x</option>
               <option value="2">2x</option>
             </select>
-            <label for="game-word-source">词源：</label>
+            <label for="game-word-source">词源 <kbd>Ctrl+Shift+4</kbd>：</label>
             <select id="game-word-source">
               <option value="builtin">内置词表</option>
               <option value="vocab">词库单词</option>
             </select>
-            <span class="game-settings-hint">设置变更后自动重置游戏</span>
+            <span class="game-settings-hint" id="game-settings-hint">设置变更后自动重置游戏</span>
           </div>
           <canvas id="game-canvas" width="800" height="500"></canvas>
           <input id="game-input" type="text" autocomplete="off" aria-label="游戏输入" />
@@ -370,20 +370,20 @@
                 </tr>
                 <tr>
                   <td><kbd>Ctrl+Shift+1/2/3</kbd></td>
-                  <td>切换键位/单词/文章练习</td>
+                  <td>切换键位/单词/文章练习（训练面板）</td>
                 </tr>
                 <tr>
                   <td><kbd>Ctrl+↑↓</kbd></td>
-                  <td>切换练习层级</td>
+                  <td>切换练习层级（训练面板）</td>
                 </tr>
                 <tr>
                   <td><kbd>Ctrl+←/→</kbd></td>
-                  <td>切换练习阶段</td>
+                  <td>切换练习阶段（训练面板）</td>
                 </tr>
               </table>
             </div>
             <div class="help-section">
-              <h4>单词掉落</h4>
+              <h4>游戏面板</h4>
               <table>
                 <tr>
                   <td><kbd>Enter</kbd></td>
@@ -405,6 +405,26 @@
                   <td>字母键</td>
                   <td>输入字符击落单词</td>
                 </tr>
+                <tr>
+                  <td><kbd>Ctrl+Shift+1/2/3</kbd></td>
+                  <td>切换模式：单词掉落/闯关射击/僵尸大战</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl+↑↓</kbd></td>
+                  <td>起始等级 ±1（1–10 循环）</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl+←/→</kbd></td>
+                  <td>速度倍率（0.5/0.75/1/1.5/2 循环）</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl+Shift+4</kbd></td>
+                  <td>切换词源（仅单词掉落模式）</td>
+                </tr>
+                <tr>
+                  <td>空格</td>
+                  <td>短语/长句的词间空格；其余情况为提交单词</td>
+                </tr>
               </table>
             </div>
           </div>
@@ -417,6 +437,8 @@
         <span><kbd>Ctrl+1/2/3/4</kbd> 切换面板</span>
         <span><kbd>F1</kbd> 帮助</span>
         <span><kbd>Ctrl+Shift+U</kbd> 切换用户</span>
+        <span><kbd>Ctrl+Shift+1/2/3</kbd> 游戏模式</span>
+        <span><kbd>Ctrl+↑↓/←→</kbd> 等级/倍率</span>
         <span><kbd>Enter</kbd> 开始</span>
         <span><kbd>Esc</kbd> 重置/暂停</span>
       </footer>

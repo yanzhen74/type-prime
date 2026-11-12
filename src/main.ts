@@ -29,6 +29,23 @@ const DEFAULT_GAME_SETTINGS: GameSettings = {
   wordSource: 'builtin',
 };
 
+/** Ctrl+Shift+数字 → 游戏模式（用 e.code 避开 Shift 改变 e.key 的布局差异） */
+const GAME_MODE_CODES: Record<string, GameSettings['mode']> = {
+  Digit1: 'falling',
+  Digit2: 'shooter',
+  Digit3: 'zombie',
+};
+/** Ctrl+Shift+4 切换词源（仅单词掉落模式有效） */
+const WORD_SOURCE_CODE = 'Digit4';
+/** 起始等级循环范围 */
+const START_LEVEL_MIN = 1;
+const START_LEVEL_MAX = 10;
+/** 速度倍率档位（循环切换） */
+const SPEED_STEPS = [0.5, 0.75, 1, 1.5, 2];
+/** 设置行提示位默认文案与快捷键闪现时长 */
+const GAME_SETTINGS_HINT_DEFAULT = '设置变更后自动重置游戏';
+const GAME_SETTINGS_HINT_TTL = 1500;
+
 class App {
   private storage: UserProgress;
   private keyboard: KeyboardRenderer | null = null;
@@ -67,6 +84,9 @@ class App {
   private gameModeSelect = document.getElementById('game-mode') as HTMLSelectElement;
   /** 游戏面板设置控件持有焦点时为 true，用于抑制 #game-input 失焦自动重聚焦抢夺下拉焦点 */
   private gameControlFocused = false;
+  /** 设置行提示位：快捷键调整后闪现当前值 */
+  private gameSettingsHint = document.getElementById('game-settings-hint');
+  private settingsHintTimer = 0;
 
   constructor() {
     this.storage = new UserProgress();
@@ -301,6 +321,68 @@ class App {
   /** 闯关射击/僵尸大战不使用词库词源，禁用该下拉避免误导 */
   private syncWordSourceDisabled(settings: GameSettings): void {
     this.gameWordSource.disabled = settings.mode !== 'falling';
+  }
+
+  // -------------------------------------------------------------------------
+  // 游戏面板设置快捷键（全键盘化，详见 PLAN.md §10.6）
+  // -------------------------------------------------------------------------
+
+  /** Ctrl+Shift+1/2/3：切换游戏模式 */
+  private setGameModeByShortcut(mode: GameSettings['mode']): void {
+    this.gameModeSelect.value = mode;
+    this.handleGameSettingChange();
+    this.flashGameSettingHint(`模式：${this.selectedText(this.gameModeSelect)}`);
+  }
+
+  /** Ctrl+↑/↓：起始等级 ±1，1–10 循环 */
+  private stepStartingLevel(delta: number): void {
+    const current = Number(this.gameStartLevel.value) || DEFAULT_GAME_SETTINGS.startingLevel;
+    const span = START_LEVEL_MAX - START_LEVEL_MIN + 1;
+    const next = ((((current - START_LEVEL_MIN + delta) % span) + span) % span) + START_LEVEL_MIN;
+    this.gameStartLevel.value = String(next);
+    this.handleGameSettingChange();
+    this.flashGameSettingHint(`起始等级：${next}`);
+  }
+
+  /** Ctrl+←/→：速度倍率在档位间循环 */
+  private stepSpeedMultiplier(delta: number): void {
+    const index = SPEED_STEPS.indexOf(Number(this.gameSpeed.value));
+    const from = index >= 0 ? index : SPEED_STEPS.indexOf(DEFAULT_GAME_SETTINGS.speedMultiplier);
+    const span = SPEED_STEPS.length;
+    const next = SPEED_STEPS[(((from + delta) % span) + span) % span];
+    this.gameSpeed.value = String(next);
+    this.handleGameSettingChange();
+    this.flashGameSettingHint(`速度倍率：${next}x`);
+  }
+
+  /** Ctrl+Shift+4：切换词源；非单词掉落模式下拉本就禁用，仅提示不生效 */
+  private toggleWordSourceByShortcut(): void {
+    if (this.gameWordSource.disabled) {
+      this.flashGameSettingHint('词源：仅单词掉落模式可切换');
+      return;
+    }
+    this.gameWordSource.value = this.gameWordSource.value === 'vocab' ? 'builtin' : 'vocab';
+    this.handleGameSettingChange();
+    this.flashGameSettingHint(`词源：${this.selectedText(this.gameWordSource)}`);
+  }
+
+  private selectedText(select: HTMLSelectElement): string {
+    return select.selectedOptions[0]?.textContent?.trim() ?? select.value;
+  }
+
+  /** 在设置行提示位闪现当前值，超时后恢复默认文案；焦点交还游戏输入框 */
+  private flashGameSettingHint(text: string): void {
+    const hint = this.gameSettingsHint;
+    window.clearTimeout(this.settingsHintTimer);
+    if (hint) {
+      hint.textContent = text;
+      hint.classList.add('flash');
+      this.settingsHintTimer = window.setTimeout(() => {
+        hint.textContent = GAME_SETTINGS_HINT_DEFAULT;
+        hint.classList.remove('flash');
+      }, GAME_SETTINGS_HINT_TTL);
+    }
+    this.focusGameInput();
   }
 
   private loadGameSettings(): GameSettings {
@@ -634,6 +716,35 @@ class App {
           e.stopPropagation();
           this.cycleUser();
           return;
+        }
+
+        // 游戏面板设置快捷键（仅游戏面板激活时生效；焦点在 select/textarea 也生效）
+        if (e.ctrlKey && !e.altKey && this.isGamePanelActive()) {
+          if (e.shiftKey) {
+            const mode = GAME_MODE_CODES[e.code];
+            if (mode) {
+              e.preventDefault();
+              e.stopPropagation();
+              this.setGameModeByShortcut(mode);
+              return;
+            }
+            if (e.code === WORD_SOURCE_CODE) {
+              e.preventDefault();
+              e.stopPropagation();
+              this.toggleWordSourceByShortcut();
+              return;
+            }
+          } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            e.stopPropagation();
+            this.stepStartingLevel(e.key === 'ArrowUp' ? 1 : -1);
+            return;
+          } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            e.preventDefault();
+            e.stopPropagation();
+            this.stepSpeedMultiplier(e.key === 'ArrowRight' ? 1 : -1);
+            return;
+          }
         }
 
         // Ctrl+↑/↓: 训练面板层级切换

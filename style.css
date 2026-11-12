@@ -232,6 +232,13 @@ body {
   opacity: 0.8;
 }
 
+/* 快捷键调整设置后闪现当前值 */
+.game-settings-hint.flash {
+  color: var(--accent);
+  opacity: 1;
+  font-weight: 600;
+}
+
 #game-canvas {
   display: block;
   width: 100%;
