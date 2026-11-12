@@ -8,6 +8,7 @@ import {
   zombieBarColor,
   ZOMBIE_HP,
   ZOMBIE_WORDS,
+  type ZombieSfx,
 } from './zombie-typing-game.js';
 import type { ZombieKind, ZombieState } from './types.js';
 import { lengthSpeedFactor } from './game-engine.js';
@@ -332,5 +333,92 @@ describe('ZombieTypingGame', () => {
     game.handleChar(' ');
     expect(boss.typedIndex).toBe(spaceAt + 1);
     expect(game.expectedChar()).toBe(boss.text[spaceAt + 1].toLowerCase());
+  });
+
+  describe('音效钩子（onSfx）', () => {
+    function makeSfxGame() {
+      const played: ZombieSfx[] = [];
+      const game = new TestZombie(
+        'test-canvas',
+        () => {},
+        () => {},
+        {
+          rng: zeroRng,
+          onSfx: (name) => played.push(name),
+        }
+      );
+      game.forceRunning();
+      return { game, played };
+    }
+
+    it('正确字符发 shoot，炮弹命中发 hit', () => {
+      const { game, played } = makeSfxGame();
+      game.spawn('normal');
+      const text = game.s.zombies[0].text;
+
+      game.handleChar(text[0]);
+      expect(played).toContain('shoot');
+
+      // 炮弹需随帧飞行才会命中（dt=1000 时一步即达）
+      game.tick(0);
+      game.tick(1000);
+      expect(played).toContain('hit');
+    });
+
+    it('打错字符发 miss，哑弹接触发 miss-hit，落地发 splat', () => {
+      const { game, played } = makeSfxGame();
+      game.spawn('normal');
+      const text = game.s.zombies[0].text;
+      game.handleChar(text[0]); // 先锁定，哑弹才会飞向目标
+
+      const wrong = text[0] === 'z' ? 'q' : 'z';
+      game.handleChar(wrong);
+      expect(played).toContain('miss');
+
+      game.tick(0);
+      game.tick(1000);
+      expect(played).toContain('miss-hit');
+
+      game.tick(3000); // 超过哑弹 TTL → 落地
+      expect(played).toContain('splat');
+    });
+
+    it('击杀发 kill，道具掉落发 heal，本波清空发 levelup', () => {
+      const { game, played } = makeSfxGame();
+      game.s.waveQueue = [];
+      game.spawn('normal');
+
+      typeFull(game, game.s.zombies[0].text);
+
+      expect(played).toContain('kill');
+      expect(played).toContain('heal'); // rng 恒 0 → 必掉道具
+      expect(played).toContain('levelup');
+      expect(game.s.wavesCleared).toBe(1);
+    });
+
+    it('僵尸触底发 hurt，基地失守发 gameover', () => {
+      const { game, played } = makeSfxGame();
+      // BOSS 每次触底扣 3 血，4 次超过基地 10 血
+      for (let i = 0; i < 4; i++) {
+        game.spawn('boss');
+        game.s.zombies[game.s.zombies.length - 1].speed = 1000;
+        game.tick(0);
+      }
+      expect(played.filter((n) => n === 'hurt')).toHaveLength(4);
+      expect(played).toContain('gameover');
+      expect(game.isRunning()).toBe(false);
+    });
+
+    it('防守成功的结算也发 gameover', () => {
+      const { game, played } = makeSfxGame();
+      game.s.wavesCleared = 7;
+      game.s.waveQueue = [];
+      game.spawn('normal');
+
+      typeFull(game, game.s.zombies[0].text);
+
+      expect(game.s.victory).toBe(true);
+      expect(played).toContain('gameover');
+    });
   });
 });

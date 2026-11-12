@@ -84,8 +84,18 @@ export function zombieBarColor(kind: ZombieKind, hp: number): string {
 export type ZombieItem = 'heal' | 'freeze' | 'score';
 const ITEMS: ZombieItem[] = ['heal', 'freeze', 'score'];
 
-/** 音效钩子事件名（预留给 sound-manager） */
-export type ZombieSfx = 'shoot' | 'hit' | 'kill' | 'miss' | 'miss-hit' | 'splat';
+/** 僵尸大战的音效事件名（GameSfx 的子集）：前六个为炮弹链路，后四个为局势事件 */
+export type ZombieSfx =
+  | 'shoot'
+  | 'hit'
+  | 'kill'
+  | 'miss'
+  | 'miss-hit'
+  | 'splat'
+  | 'hurt'
+  | 'heal'
+  | 'levelup'
+  | 'gameover';
 
 /**
  * 波次组成（抽为纯函数便于测试）。
@@ -238,6 +248,12 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     this.emitUpdate();
   }
 
+  /** 结算音效（防守成功/基地失守都走基类 gameOver） */
+  protected gameOver(): void {
+    this.sfx?.('gameover');
+    super.gameOver();
+  }
+
   private findMatchingZombie(char: string): number | null {
     let bestIndex: number | null = null;
     let bestY = -Infinity;
@@ -289,11 +305,12 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     return true;
   }
 
-  /** 击杀掉落道具：修复 / 冻结 / 加分 */
+  /** 击杀掉落道具：修复 / 冻结 / 加分（三种道具共用一个拾取音色） */
   private rollItem(x: number, y: number): void {
     if (this.rng() >= ITEM_CHANCE) return;
     const item = ITEMS[Math.floor(this.rng() * ITEMS.length)];
     this.state.items += 1;
+    this.sfx?.('heal');
     if (item === 'heal') {
       this.state.lives = Math.min(this.state.lives + 1, MAX_BASE_HP);
       this.state.effects.push({ x, y, at: performance.now(), text: '🔧 基地+1' });
@@ -317,6 +334,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     this.state.lives = Math.min(this.state.lives + 1, MAX_BASE_HP);
     this.state.levelClearFlashAt = performance.now();
     this.state.waveQueue = waveComposition(this.state.level);
+    this.sfx?.('levelup');
     this.emitUpdate();
   }
 
@@ -384,6 +402,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
         }
 
         this.state.lives -= ZOMBIE_DAMAGE[z.kind];
+        this.sfx?.('hurt');
         if (this.state.lives <= 0) {
           this.gameOver();
           return;

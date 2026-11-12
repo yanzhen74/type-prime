@@ -1,6 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { computeFallSpeed, computeSpawnInterval, FallingWordGame } from './game.js';
+import {
+  computeFallSpeed,
+  computeSpawnInterval,
+  FallingWordGame,
+  type FallingSfx,
+} from './game.js';
 import type { GameState } from './types.js';
+
+/** 测试子类：暴露状态与受保护的 update，便于合成时间驱动出词/下落 */
+class TestFalling extends FallingWordGame {
+  get s(): GameState {
+    return this.state;
+  }
+  forceRunning(): void {
+    this.state.isRunning = true;
+    this.state.countdown = 0;
+  }
+  tick(now: number): void {
+    this.update(now);
+  }
+}
 
 describe('游戏难度纯函数', () => {
   it('computeFallSpeed 采用饱和曲线：递增但斜率递减、有上限，并整体乘以速度倍率', () => {
@@ -103,5 +122,71 @@ describe('FallingWordGame 起始等级接线', () => {
     );
     game.start();
     expect(box.state?.lives).toBe(5);
+  });
+});
+
+describe('FallingWordGame 音效钩子（onSfx）', () => {
+  beforeEach(() => {
+    const canvas = document.createElement('canvas');
+    canvas.id = 'game-canvas';
+    canvas.width = 800;
+    canvas.height = 500;
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => createMockCtx();
+    document.body.appendChild(canvas);
+  });
+
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  function makeSfxGame() {
+    const played: FallingSfx[] = [];
+    const game = new TestFalling(
+      'game-canvas',
+      () => {},
+      () => {},
+      {
+        onSfx: (name) => played.push(name),
+      }
+    );
+    game.forceRunning();
+    return { game, played };
+  }
+
+  it('正确字符发 key，完整输入击落单词发 destroy', () => {
+    const { game, played } = makeSfxGame();
+    game.tick(5000); // 超过出词间隔 → 生成一个单词
+    const word = game.s.words[game.s.words.length - 1];
+
+    game.handleChar(word.text[0]);
+    expect(played).toContain('key');
+
+    for (const ch of word.text.slice(1)) game.handleChar(ch);
+    expect(played).toContain('destroy');
+    expect(game.s.words).not.toContain(word);
+  });
+
+  it('无匹配单词时输入发 error', () => {
+    const { game, played } = makeSfxGame();
+    expect(game.s.words).toEqual([]);
+    game.handleChar('z');
+    expect(played).toContain('error');
+    expect(game.s.mistakes).toBe(1);
+  });
+
+  it('单词触底扣命发 hurt，命尽发 gameover', () => {
+    const { game, played } = makeSfxGame();
+
+    for (let i = 0; i < 5; i++) {
+      const t = 5000 + i * 4000;
+      game.tick(t); // 出词
+      const words = game.s.words;
+      words[words.length - 1].speed = 1000;
+      game.tick(t + 1); // 触底
+    }
+
+    expect(played.filter((n) => n === 'hurt')).toHaveLength(5);
+    expect(played).toContain('gameover');
+    expect(game.isRunning()).toBe(false);
   });
 });

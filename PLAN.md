@@ -415,10 +415,21 @@ type-prime/
 
 #### 4. 表现层打磨
 
-- 音效系统 `src/sound-manager.ts`。
-- 粒子系统 `src/particle-system.ts`。
+- 音效系统 `src/sound-manager.ts`（已实现）。
+- 粒子系统 `src/particle-system.ts`（待实现）。
 - 主题切换、键盘动画、Canvas 分层渲染。
 - 可选 WebGL/PixiJS 评估。
+
+##### 4.1 音效系统实现口径（已交付）
+
+- 合成而非资源：全部音效由 WebAudio 实时合成（单振荡器 + 增益包络），不引入音频文件与第三方依赖，与项目「纯代码绘制/合成」口径一致；音色参数抽为纯数据表 `SFX_SPECS`（波形/起止频率/时长/峰值增益）便于调音与单测。
+- 事件名统一：`GameSfx` 为三个模式事件名的并集，各游戏只定义自己的子集（`FallingSfx` / `ShooterSfx` / `ZombieSfx`）并通过 `onSfx?: (name) => void` 钩子向外报事件；游戏侧不持有播放器引用，因此音效可整体关闭而不影响任何判定与测试。
+- 钩子位置：单词掉落（key/error/destroy/levelup/hurt/gameover）、闯关射击（shoot/error/hit/destroy/levelup/hurt/boss/gameover）、僵尸大战（沿用已有 shoot/hit/kill/miss/miss-hit/splat，新增 hurt/heal/levelup/gameover）；`gameover` 统一由子类覆写 `protected gameOver()` 先发音效再调 `super.gameOver()`，胜负两条路径都覆盖。
+- 自动播放策略：AudioContext 懒创建（首次 `play()` 就发生在按键手势里），另在「开始游戏」按钮/Enter 与音效开关处显式 `unlock()`；suspended 时自动 `resume()`；环境不支持 WebAudio（如 jsdom）时全部方法退化为 no-op。
+- 防噪：同名音效 30ms 节流（快速连打不堆叠削波），逐字符音效（key/shoot/hit）峰值增益刻意低于事件音效；总音量默认 0.6 可设。
+- 开关与持久化：设置行新增「音效」下拉（on/off）+ `Ctrl+Shift+5`；该开关只切换播放器状态而**不重建游戏实例**（区别于其他设置项），避免调音量时打断当前局；值存入 `typeprime_game_settings.sound`，开启时顺手播一声反馈。
+- 测试与验证：`sound-manager.test.ts`（12 例：音色表合法性与覆盖、合成参数/包络/时长、关闭不创建上下文、节流、无 WebAudio 降级、suspended 自动 resume、音量夹取）+ 三个游戏各补 onSfx 事件断言；浏览器实测三模式发声、关闭后振荡器创建数为 0、刷新后设置保留、控制台零报错。
+- 未采取方案：外部音频文件/音频精灵（违反零资源口径、离线单文件体积膨胀）、第三方音效库（新增依赖）、在每个游戏内部直接建 AudioContext（三个模式会重复实现且无法统一静音）。
 
 #### 5. 测试（已覆盖）
 

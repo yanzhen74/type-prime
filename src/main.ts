@@ -9,6 +9,7 @@ import { VocabularyBank } from './vocabulary.js';
 import { ReviewScheduler } from './review.js';
 import { VocabPanel } from './vocab-panel.js';
 import { Dialog } from './dialog.js';
+import { SoundManager, type GameSfx } from './sound-manager.js';
 import type { GameBaseState } from './types.js';
 
 /** 游戏难度设置（持久化到 localStorage） */
@@ -18,6 +19,8 @@ interface GameSettings {
   startingLevel: number;
   speedMultiplier: number;
   wordSource: 'builtin' | 'vocab';
+  /** 音效开关（WebAudio 实时合成，见 sound-manager.ts） */
+  sound: boolean;
 }
 
 const GAME_SETTINGS_KEY = 'typeprime_game_settings';
@@ -27,6 +30,7 @@ const DEFAULT_GAME_SETTINGS: GameSettings = {
   startingLevel: 1,
   speedMultiplier: 1,
   wordSource: 'builtin',
+  sound: true,
 };
 
 /** Ctrl+Shift+数字 → 游戏模式（用 e.code 避开 Shift 改变 e.key 的布局差异） */
@@ -37,6 +41,8 @@ const GAME_MODE_CODES: Record<string, GameSettings['mode']> = {
 };
 /** Ctrl+Shift+4 切换词源（仅单词掉落模式有效） */
 const WORD_SOURCE_CODE = 'Digit4';
+/** Ctrl+Shift+5 切换音效开关 */
+const SOUND_CODE = 'Digit5';
 /** 起始等级循环范围 */
 const START_LEVEL_MIN = 1;
 const START_LEVEL_MAX = 10;
@@ -82,6 +88,10 @@ class App {
   private gameSpeed = document.getElementById('game-speed') as HTMLSelectElement;
   private gameWordSource = document.getElementById('game-word-source') as HTMLSelectElement;
   private gameModeSelect = document.getElementById('game-mode') as HTMLSelectElement;
+  /** 音效开关（只切换播放器状态，不重建游戏实例） */
+  private gameSoundSelect = document.getElementById('game-sound') as HTMLSelectElement | null;
+  /** 音效播放器：三个游戏模式共用，可整体开关 */
+  private readonly sound = new SoundManager();
   /** 游戏面板设置控件持有焦点时为 true，用于抑制 #game-input 失焦自动重聚焦抢夺下拉焦点 */
   private gameControlFocused = false;
   /** 设置行提示位：快捷键调整后闪现当前值 */
@@ -125,6 +135,7 @@ class App {
 
     const gameSettings = this.loadGameSettings();
     this.applySettingsToControls(gameSettings);
+    this.sound.setEnabled(gameSettings.sound);
     this.game = this.createGame(gameSettings);
 
     this.helpModal = document.getElementById('help-modal');
@@ -250,6 +261,8 @@ class App {
 
   private initGameControls(): void {
     this.btnStart.addEventListener('click', () => {
+      // 点击本身就是用户手势，在此解锁音频上下文（绕过浏览器自动播放策略）
+      this.sound.unlock();
       this.game.start();
       this.focusGameInput();
     });
@@ -270,18 +283,29 @@ class App {
     ];
     for (const control of controls) {
       control.addEventListener('change', () => this.handleGameSettingChange());
-      // 焦点保护：设置控件展开期间置位 gameControlFocused，抑制 #game-input
-      // 失焦自动重聚焦抢夺下拉焦点；blur 时把焦点交还游戏输入框。
-      control.addEventListener('focus', () => {
-        this.gameControlFocused = true;
-      });
-      control.addEventListener('blur', () => {
-        this.gameControlFocused = false;
-        if (this.isGamePanelActive()) {
-          this.focusGameInput();
-        }
-      });
+      this.protectControlFocus(control);
     }
+    // 音效开关只切换播放器状态，不需要重建游戏实例（避免打断当前局）
+    if (this.gameSoundSelect) {
+      this.gameSoundSelect.addEventListener('change', () => this.handleSoundSettingChange());
+      this.protectControlFocus(this.gameSoundSelect);
+    }
+  }
+
+  /**
+   * 焦点保护：设置控件展开期间置位 gameControlFocused，抑制 #game-input
+   * 失焦自动重聚焦抢夺下拉焦点；blur 时把焦点交还游戏输入框。
+   */
+  private protectControlFocus(control: HTMLElement): void {
+    control.addEventListener('focus', () => {
+      this.gameControlFocused = true;
+    });
+    control.addEventListener('blur', () => {
+      this.gameControlFocused = false;
+      if (this.isGamePanelActive()) {
+        this.focusGameInput();
+      }
+    });
   }
 
   /** 设置变更：持久化并重建当前模式的游戏实例（重置当前局） */
@@ -302,12 +326,14 @@ class App {
       return new TypingShooterGame('game-canvas', onUpdate, onGameOver, {
         startingLevel: settings.startingLevel,
         speedMultiplier: settings.speedMultiplier,
+        onSfx: this.gameSfxHandler(),
       });
     }
     if (settings.mode === 'zombie') {
       return new ZombieTypingGame('game-canvas', onUpdate, onGameOver, {
         startingLevel: settings.startingLevel,
         speedMultiplier: settings.speedMultiplier,
+        onSfx: this.gameSfxHandler(),
       });
     }
     return new FallingWordGame(
@@ -366,6 +392,32 @@ class App {
     this.flashGameSettingHint(`词源：${this.selectedText(this.gameWordSource)}`);
   }
 
+  /** Ctrl+Shift+5：切换音效开关 */
+  private toggleSoundByShortcut(): void {
+    const select = this.gameSoundSelect;
+    if (!select) return;
+    select.value = select.value === 'off' ? 'on' : 'off';
+    this.handleSoundSettingChange();
+  }
+
+  /** 音效开关变更：持久化 + 切换播放器状态（不重建游戏实例） */
+  private handleSoundSettingChange(): void {
+    const settings = this.readGameSettings();
+    this.saveGameSettings(settings);
+    this.sound.setEnabled(settings.sound);
+    this.flashGameSettingHint(`音效：${settings.sound ? '开' : '关'}`);
+    if (settings.sound) {
+      // 开关动作本身就是用户手势，顺手解锁上下文并给一声反馈
+      this.sound.unlock();
+      this.sound.play('key');
+    }
+  }
+
+  /** 三个游戏模式共用的音效回调（各模式事件名均为 GameSfx 子集） */
+  private gameSfxHandler(): (name: GameSfx) => void {
+    return (name) => this.sound.play(name);
+  }
+
   private selectedText(select: HTMLSelectElement): string {
     return select.selectedOptions[0]?.textContent?.trim() ?? select.value;
   }
@@ -395,6 +447,7 @@ class App {
           startingLevel: parsed.startingLevel ?? DEFAULT_GAME_SETTINGS.startingLevel,
           speedMultiplier: parsed.speedMultiplier ?? DEFAULT_GAME_SETTINGS.speedMultiplier,
           wordSource: parsed.wordSource === 'vocab' ? 'vocab' : 'builtin',
+          sound: parsed.sound ?? DEFAULT_GAME_SETTINGS.sound,
         };
       }
     } catch {
@@ -412,6 +465,9 @@ class App {
     this.gameStartLevel.value = String(settings.startingLevel);
     this.gameSpeed.value = String(settings.speedMultiplier);
     this.gameWordSource.value = settings.wordSource;
+    if (this.gameSoundSelect) {
+      this.gameSoundSelect.value = settings.sound ? 'on' : 'off';
+    }
     this.syncWordSourceDisabled(settings);
   }
 
@@ -426,6 +482,7 @@ class App {
       startingLevel: Number.isFinite(level) && level >= 1 ? level : 1,
       speedMultiplier: Number.isFinite(speed) && speed > 0 ? speed : 1,
       wordSource: this.gameWordSource.value === 'vocab' ? 'vocab' : 'builtin',
+      sound: this.gameSoundSelect?.value !== 'off',
     };
   }
 
@@ -434,6 +491,7 @@ class App {
       startingLevel: settings.startingLevel,
       speedMultiplier: settings.speedMultiplier,
       wordProvider: settings.wordSource === 'vocab' ? this.makeVocabWordProvider() : undefined,
+      onSfx: this.gameSfxHandler(),
     };
   }
 
@@ -734,6 +792,12 @@ class App {
               this.toggleWordSourceByShortcut();
               return;
             }
+            if (e.code === SOUND_CODE) {
+              e.preventDefault();
+              e.stopPropagation();
+              this.toggleSoundByShortcut();
+              return;
+            }
           } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
             e.stopPropagation();
@@ -767,6 +831,7 @@ class App {
           if (this.isGamePanelActive() && !this.game.isRunning()) {
             e.preventDefault();
             e.stopPropagation();
+            this.sound.unlock();
             this.game.start();
             this.focusGameInput();
             return;

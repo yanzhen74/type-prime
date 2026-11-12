@@ -219,6 +219,11 @@
               <option value="builtin">内置词表</option>
               <option value="vocab">词库单词</option>
             </select>
+            <label for="game-sound">音效 <kbd>Ctrl+Shift+5</kbd>：</label>
+            <select id="game-sound">
+              <option value="on">开</option>
+              <option value="off">关</option>
+            </select>
             <span class="game-settings-hint" id="game-settings-hint">设置变更后自动重置游戏</span>
           </div>
           <canvas id="game-canvas" width="800" height="500"></canvas>
@@ -420,6 +425,10 @@
                 <tr>
                   <td><kbd>Ctrl+Shift+4</kbd></td>
                   <td>切换词源（仅单词掉落模式）</td>
+                </tr>
+                <tr>
+                  <td><kbd>Ctrl+Shift+5</kbd></td>
+                  <td>音效开 / 关</td>
                 </tr>
                 <tr>
                   <td>空格</td>

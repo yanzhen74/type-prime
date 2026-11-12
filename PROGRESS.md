@@ -153,7 +153,9 @@
 2. ✅ 新建 `src/typing-shooter-game.ts`（`TypingShooterGame`）：目标从单字母 → 字母组合 → 单词 → 短语逐级；连击、关卡推进、BOSS、结算页。
 3. ✅ 新建 `src/zombie-typing-game.ts`（`ZombieTypingGame`）：波次系统、基地血量、普通 / 快速 / 坦克 / BOSS 僵尸、道具、结算页；复用 `FallingWordGame` 的目标锁定与单词进度逻辑。
 4. ✅ 僵尸造型改进（用户手动测试后反馈：当前僵尸仅为色块方框，不够形象）：在 `src/zombie-typing-game.ts` 的 `draw()` 中为四类僵尸绘制可辨识的造型（头/躯干/手臂/腿部轮廓或简笔精灵），普通/快速/坦克/BOSS 在体型、配色、细节上有明显区分；行走时可加轻微摆动/步态动画；保持 Canvas 2D 纯绘制、不引入图片资源与额外依赖；造型不得遮挡携带单词与血条的显示。
-5. ⬜ 表现层打磨：`src/sound-manager.ts`、`src/particle-system.ts`、主题与 Canvas 分层渲染。
+5. 🔶 表现层打磨（部分完成）：
+   - ✅ 音效系统 `src/sound-manager.ts`：WebAudio 实时合成（无音频文件、无新依赖），音色抽为纯数据表 `SFX_SPECS`；三个游戏模式统一通过 `onSfx` 钩子报事件（单词掉落 key/error/destroy/levelup/hurt/gameover；闯关射击 shoot/error/hit/destroy/levelup/hurt/boss/gameover；僵尸大战沿用 shoot/hit/kill/miss/miss-hit/splat 并补 hurt/heal/levelup/gameover）；设置行新增「音效」开关 + `Ctrl+Shift+5`，持久化到 `typeprime_game_settings.sound` 且不重建游戏实例，关闭后完全静音；AudioContext 懒创建/自动 resume 绕过自动播放策略，不支持时降级 no-op；同名音效 30ms 节流防削波。浏览器实测三模式发声、关闭静音、刷新持久化、控制台零报错。详见 PLAN.md §10.4.1。
+   - ⬜ 粒子系统 `src/particle-system.ts`（击杀爆散/命中火花/哑弹灰雾，取代当前 emoji 飘字）、主题切换、键盘动画、Canvas 分层渲染、WebGL/PixiJS 评估。
 6. ✅ 测试：游戏引擎状态机、输入匹配、关卡 / 波次与结算测试（随任务 1–4、8、9 逐步补齐，已核对覆盖面）：
    - 状态机：`src/game-engine.test.ts` —— start 倒计时与输入门控、pause/resume、reset、attachInput 路由、gameOver 回调、`lengthSpeedFactor` 边界、基类 `expectedChar` 默认值。
    - 输入匹配与关卡/波次：`src/game.test.ts`（难度纯函数 + 起始等级接线）、`src/typing-shooter-game.test.ts`（内容分级、出怪间隔、连击/失误/Backspace、BOSS 三轮与升关、触底扣命与结算、长句减速与空格）、`src/zombie-typing-game.test.ts`（波次构成、出怪间隔与速度、普通/坦克击杀、触底扣血、双入口波次推进、道具回补、坚守 8 波结算、打击反馈与哑弹）。

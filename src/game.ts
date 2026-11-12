@@ -54,7 +54,12 @@ export interface GameOptions {
   speedMultiplier?: number;
   /** 词源提供者：返回一个单词文本；缺省或返回空时用内置词表随机 */
   wordProvider?: () => string;
+  /** 音效钩子：由外层（main.ts）接到 SoundManager，缺省无声 */
+  onSfx?: (name: FallingSfx) => void;
 }
+
+/** 单词掉落的音效事件名（GameSfx 的子集） */
+export type FallingSfx = 'key' | 'error' | 'destroy' | 'levelup' | 'hurt' | 'gameover';
 
 /**
  * 下落速度公式（抽为纯函数便于测试）。
@@ -82,6 +87,7 @@ export function computeSpawnInterval(level: number): number {
 export class FallingWordGame extends GameEngine<GameState> {
   private wordProvider?: () => string;
   private lastSpawn = 0;
+  private sfx?: (name: FallingSfx) => void;
 
   constructor(
     canvasId: string,
@@ -91,6 +97,7 @@ export class FallingWordGame extends GameEngine<GameState> {
   ) {
     super(canvasId, { onUpdate, onGameOver }, options);
     this.wordProvider = options.wordProvider;
+    this.sfx = options.onSfx;
   }
 
   /**
@@ -102,6 +109,7 @@ export class FallingWordGame extends GameEngine<GameState> {
     this.startingLevel = Math.max(1, options.startingLevel ?? 1);
     this.speedMultiplier = options.speedMultiplier ?? 1;
     this.wordProvider = options.wordProvider;
+    this.sfx = options.onSfx;
     this.reset();
   }
 
@@ -138,6 +146,7 @@ export class FallingWordGame extends GameEngine<GameState> {
         this.state.lockedWordIndex = matchIndex;
       } else {
         this.recordError(char);
+        this.sfx?.('error');
         this.emitUpdate();
         return;
       }
@@ -150,6 +159,7 @@ export class FallingWordGame extends GameEngine<GameState> {
     if (char === expected) {
       word.typedIndex += 1;
       this.state.currentInput += char;
+      this.sfx?.('key');
 
       if (word.typedIndex >= word.text.length) {
         this.destroyWord(this.state.lockedWordIndex);
@@ -158,6 +168,7 @@ export class FallingWordGame extends GameEngine<GameState> {
       }
     } else {
       this.recordError(char);
+      this.sfx?.('error');
       this.emitUpdate();
     }
   }
@@ -177,6 +188,12 @@ export class FallingWordGame extends GameEngine<GameState> {
     // 当前设计为逐字符输入即销毁，submit 用于清理输入框显示
     this.state.currentInput = '';
     this.emitUpdate();
+  }
+
+  /** 结算音效（胜/负都走基类 gameOver） */
+  protected gameOver(): void {
+    this.sfx?.('gameover');
+    super.gameOver();
   }
 
   private findMatchingWord(char: string): number | null {
@@ -200,6 +217,7 @@ export class FallingWordGame extends GameEngine<GameState> {
     const baseScore = word.text.length * 10;
     const levelBonus = this.state.level * 5;
     this.state.score += baseScore + levelBonus;
+    this.sfx?.('destroy');
 
     this.state.words.splice(index, 1);
     this.state.lockedWordIndex = null;
@@ -221,6 +239,7 @@ export class FallingWordGame extends GameEngine<GameState> {
     this.state.wordsClearedThisLevel = 0;
     this.state.lives = Math.min(this.state.lives + 1, MAX_LIVES);
     this.state.levelClearFlashAt = performance.now();
+    this.sfx?.('levelup');
 
     if ((this.state.levelsCleared ?? 0) >= LEVELS_TO_WIN) {
       this.state.victory = true;
@@ -266,6 +285,7 @@ export class FallingWordGame extends GameEngine<GameState> {
         }
 
         this.state.lives -= 1;
+        this.sfx?.('hurt');
         if (this.state.lives <= 0) {
           this.gameOver();
           return;

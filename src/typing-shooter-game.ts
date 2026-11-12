@@ -64,7 +64,13 @@ export function computeShooterSpawnInterval(level: number): number {
 /** 闯关射击选项：在通用选项之上允许注入确定性随机源（供测试） */
 export interface ShooterOptions extends GameEngineOptions {
   rng?: () => number;
+  /** 音效钩子：由外层（main.ts）接到 SoundManager，缺省无声 */
+  onSfx?: (name: ShooterSfx) => void;
 }
+
+/** 闯关射击的音效事件名（GameSfx 的子集） */
+export type ShooterSfx =
+  'shoot' | 'error' | 'hit' | 'destroy' | 'levelup' | 'hurt' | 'boss' | 'gameover';
 
 /**
  * 闯关射击游戏（块三游戏任务 2）。
@@ -75,6 +81,7 @@ export interface ShooterOptions extends GameEngineOptions {
  */
 export class TypingShooterGame extends GameEngine<ShooterState> {
   private readonly rng: () => number;
+  private readonly sfx?: (name: ShooterSfx) => void;
   private lastSpawn = 0;
   private nextId = 1;
 
@@ -86,6 +93,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
   ) {
     super(canvasId, { onUpdate, onGameOver }, options);
     this.rng = options.rng ?? Math.random;
+    this.sfx = options.onSfx;
   }
 
   protected createState(): ShooterState {
@@ -135,6 +143,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
       target.typedIndex += 1;
       this.state.currentInput += char;
       this.state.correctChars += 1;
+      this.sfx?.('shoot');
       if (target.typedIndex >= target.text.length) {
         this.hitTarget(this.state.lockedTargetIndex);
       } else {
@@ -159,10 +168,17 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     this.emitUpdate();
   }
 
+  /** 结算音效（胜/负都走基类 gameOver） */
+  protected gameOver(): void {
+    this.sfx?.('gameover');
+    super.gameOver();
+  }
+
   /** 记录一次失误：错误计数 + 闪烁反馈 + 连击清零 */
   private registerMiss(char: string): void {
     this.recordError(char);
     this.state.combo = 0;
+    this.sfx?.('error');
     this.emitUpdate();
   }
 
@@ -189,6 +205,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
       target.typedIndex = 0;
       this.state.currentInput = '';
       this.state.score += 5;
+      this.sfx?.('hit');
       this.emitUpdate();
       return;
     }
@@ -199,6 +216,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     this.state.combo += 1;
     this.state.maxCombo = Math.max(this.state.maxCombo, this.state.combo);
     this.state.effects.push({ x: target.x, y: target.y, at: performance.now() });
+    this.sfx?.('destroy');
 
     this.state.targets.splice(index, 1);
     this.state.lockedTargetIndex = null;
@@ -218,6 +236,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     this.state.targetsClearedThisLevel = 0;
     this.state.lives = Math.min(this.state.lives + 1, MAX_LIVES);
     this.state.levelClearFlashAt = performance.now();
+    this.sfx?.('levelup');
 
     if (this.state.levelsCleared >= LEVELS_TO_WIN) {
       this.state.victory = true;
@@ -256,6 +275,9 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
       speed,
       hp: kind === 'boss' ? 3 : 1,
     });
+    if (kind === 'boss') {
+      this.sfx?.('boss');
+    }
   }
 
   protected update(now: number): void {
@@ -283,6 +305,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
 
         this.state.combo = 0;
         this.state.lives -= 1;
+        this.sfx?.('hurt');
         if (this.state.lives <= 0) {
           this.gameOver();
           return;

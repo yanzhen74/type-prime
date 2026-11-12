@@ -6,6 +6,7 @@ import {
   computeShooterFallSpeed,
   SHOOTER_CONTENT,
   BOSS_CONTENT,
+  type ShooterSfx,
 } from './typing-shooter-game.js';
 import { lengthSpeedFactor } from './game-engine.js';
 import type { ShooterState } from './types.js';
@@ -212,5 +213,70 @@ describe('TypingShooterGame', () => {
     game.handleChar(' ');
     expect(boss.typedIndex).toBe(spaceAt + 1);
     expect(game.expectedChar()).toBe(boss.text[spaceAt + 1].toLowerCase());
+  });
+
+  describe('音效钩子（onSfx）', () => {
+    function makeSfxGame(startingLevel = 2) {
+      const played: ShooterSfx[] = [];
+      const game = new TestShooter(
+        'test-canvas',
+        () => {},
+        () => {},
+        {
+          rng: zeroRng,
+          startingLevel,
+          onSfx: (name) => played.push(name),
+        }
+      );
+      game.forceRunning();
+      return { game, played };
+    }
+
+    it('正确字符发 shoot、错误字符发 error、击毁目标发 destroy', () => {
+      const { game, played } = makeSfxGame(2);
+      game.spawn();
+      const text = game.s.targets[0].text;
+      expect(text.length).toBeGreaterThan(1);
+
+      game.handleChar(text[0]);
+      expect(played).toContain('shoot');
+
+      const wrong = text[1] === 'z' ? 'q' : 'z';
+      game.handleChar(wrong);
+      expect(played).toContain('error');
+
+      typeFull(game, text.slice(1));
+      expect(played).toContain('destroy');
+      expect(game.s.targets).toEqual([]);
+    });
+
+    it('BOSS 出现发 boss、破甲发 hit、升关发 levelup', () => {
+      const { game, played } = makeSfxGame(4);
+      game.s.targetsClearedThisLevel = 7; // 本关最后一个目标 → BOSS
+      game.spawn();
+      expect(played).toContain('boss');
+
+      const boss = game.s.targets[game.s.targets.length - 1];
+      typeFull(game, boss.text);
+      expect(played).toContain('hit'); // 破甲（hp 3→2）
+
+      typeFull(game, boss.text);
+      typeFull(game, boss.text);
+      expect(played).toContain('destroy');
+      expect(played).toContain('levelup');
+      expect(game.s.level).toBe(5);
+    });
+
+    it('目标触底发 hurt，命尽发 gameover', () => {
+      const { game, played } = makeSfxGame(1);
+      for (let i = 0; i < 5; i++) {
+        game.spawn();
+        game.s.targets[game.s.targets.length - 1].speed = 1000;
+        game.tick(0);
+      }
+      expect(played.filter((n) => n === 'hurt')).toHaveLength(5);
+      expect(played).toContain('gameover');
+      expect(game.isRunning()).toBe(false);
+    });
   });
 });
