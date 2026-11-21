@@ -1,4 +1,5 @@
 import type { TypingEngine } from './input.js';
+import { THEMES, type CanvasPalette } from './theme.js';
 import type { GameBaseState } from './types.js';
 
 /** 游戏状态变更与结束回调 */
@@ -13,6 +14,8 @@ export interface GameEngineOptions {
   startingLevel?: number;
   /** 速度倍率，乘在基础速度上 */
   speedMultiplier?: number;
+  /** 取色函数：绘制时实时读当前主题版面色，切主题不重建实例 */
+  getPalette?: () => CanvasPalette;
 }
 
 /** 文本长度速度补偿：参考长度以内不减速，下限避免长句慢到失去压迫感 */
@@ -52,6 +55,8 @@ export abstract class GameEngine<S extends GameBaseState = GameBaseState> {
 
   private readonly onUpdate: (state: S) => void;
   private readonly onGameOver: (score: number) => void;
+  /** 版面色取色函数（默认深空夜，main.ts 注入 ThemeManager.provider()） */
+  protected readonly getPalette: () => CanvasPalette;
   private inputUnsubscribe: (() => void) | null = null;
 
   constructor(canvasId: string, callbacks: GameCallbacks<S>, options: GameEngineOptions = {}) {
@@ -69,7 +74,13 @@ export abstract class GameEngine<S extends GameBaseState = GameBaseState> {
     this.onGameOver = callbacks.onGameOver;
     this.startingLevel = Math.max(1, options.startingLevel ?? 1);
     this.speedMultiplier = options.speedMultiplier ?? 1;
+    this.getPalette = options.getPalette ?? (() => THEMES.night.canvas);
     this.state = this.createState();
+  }
+
+  /** 主动重绘一帧：主题切换等外部变更时刷新静止画面（运行中由 rAF 自然覆盖） */
+  redraw(): void {
+    this.draw();
   }
 
   /** 构造完整初始状态（应基于 createBaseState() 扩展各自字段） */

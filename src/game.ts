@@ -1,4 +1,4 @@
-import { GameEngine, lengthSpeedFactor } from './game-engine.js';
+import { GameEngine, lengthSpeedFactor, type GameEngineOptions } from './game-engine.js';
 import { ParticleSystem } from './particle-system.js';
 import type { GameState } from './types.js';
 
@@ -47,12 +47,11 @@ const SPAWN_BASE = 2400;
 const SPAWN_PER_LEVEL = 70;
 const SPAWN_FLOOR = 1400;
 
-/** 游戏难度与词源选项（均可选，缺省为原始行为） */
-export interface GameOptions {
-  /** 起始等级（>=1），决定初始下落速度与生成间隔；升级仍按分数递增 */
-  startingLevel?: number;
-  /** 速度倍率，乘在基础下落速度上（0.5x~2x） */
-  speedMultiplier?: number;
+/**
+ * 游戏难度与词源选项（均可选，缺省为原始行为）。
+ * 起始等级/速度倍率/取色函数等通用项继承自 GameEngineOptions。
+ */
+export interface GameOptions extends GameEngineOptions {
   /** 词源提供者：返回一个单词文本；缺省或返回空时用内置词表随机 */
   wordProvider?: () => string;
   /** 音效钩子：由外层（main.ts）接到 SoundManager，缺省无声 */
@@ -256,7 +255,13 @@ export class FallingWordGame extends GameEngine<GameState> {
     this.sfx?.('levelup');
     // 升关礼花：居中扩散 + 冲击环
     this.particles.burst(this.canvas.width / 2, this.canvas.height / 2, 'levelup');
-    this.particles.ring(this.canvas.width / 2, this.canvas.height / 2, '#22c55e', 20, 480);
+    this.particles.ring(
+      this.canvas.width / 2,
+      this.canvas.height / 2,
+      this.getPalette().success,
+      20,
+      480
+    );
 
     if ((this.state.levelsCleared ?? 0) >= LEVELS_TO_WIN) {
       this.state.victory = true;
@@ -320,6 +325,7 @@ export class FallingWordGame extends GameEngine<GameState> {
 
   protected draw(): void {
     const ctx = this.ctx;
+    const pal = this.getPalette();
     const width = this.canvas.width;
     const height = this.canvas.height;
 
@@ -333,7 +339,7 @@ export class FallingWordGame extends GameEngine<GameState> {
     ctx.clearRect(0, 0, width, height);
 
     // 背景网格
-    ctx.strokeStyle = '#1e293b';
+    ctx.strokeStyle = pal.grid;
     ctx.lineWidth = 1;
     for (let i = 0; i < width; i += 40) {
       ctx.beginPath();
@@ -351,10 +357,10 @@ export class FallingWordGame extends GameEngine<GameState> {
     // 危险线（无锁定单词时，错误在此区域红色闪烁）
     const dangerFlash = errorActive && this.state.lockedWordIndex === null;
     ctx.save();
-    ctx.strokeStyle = dangerFlash ? '#ff1f4b' : '#f43f5e';
+    ctx.strokeStyle = dangerFlash ? pal.dangerHot : pal.danger;
     ctx.lineWidth = dangerFlash ? 4 : 1;
     if (dangerFlash) {
-      ctx.shadowColor = '#f43f5e';
+      ctx.shadowColor = pal.danger;
       ctx.shadowBlur = 16;
     }
     ctx.setLineDash([8, 8]);
@@ -379,7 +385,7 @@ export class FallingWordGame extends GameEngine<GameState> {
       ctx.textBaseline = 'middle';
 
       // 阴影
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillStyle = pal.shadow;
       ctx.fillText(word.text, drawX + 2, word.y + 2);
 
       // 已输入部分高亮（错误时锁定单词整体染红，强调“这个单词敲错了”）
@@ -389,22 +395,22 @@ export class FallingWordGame extends GameEngine<GameState> {
       const typedWidth = ctx.measureText(typed).width;
       const startX = drawX - fullWidth / 2;
 
-      ctx.fillStyle = errorLocked ? '#f43f5e' : isLocked ? '#22c55e' : '#38bdf8';
+      ctx.fillStyle = errorLocked ? pal.danger : isLocked ? pal.success : pal.accent;
       ctx.fillText(typed, startX + typedWidth / 2, word.y);
 
-      ctx.fillStyle = errorLocked ? '#fca5a5' : isLocked ? '#fbbf24' : '#f8fafc';
+      ctx.fillStyle = errorLocked ? pal.dangerSoft : isLocked ? pal.warn : pal.ink;
       ctx.fillText(untyped, startX + typedWidth + ctx.measureText(untyped).width / 2, word.y);
 
       // 锁定框
       if (isLocked) {
-        ctx.strokeStyle = errorLocked ? '#f43f5e' : '#fbbf24';
+        ctx.strokeStyle = errorLocked ? pal.danger : pal.warn;
         ctx.lineWidth = 2;
         ctx.strokeRect(drawX - fullWidth / 2 - 8, word.y - 18, fullWidth + 16, 36);
       }
 
       // 错误字符标注：在锁定单词上方绘制 ✗ <错误字符>
       if (errorLocked && lastError) {
-        ctx.fillStyle = '#f43f5e';
+        ctx.fillStyle = pal.danger;
         ctx.font = 'bold 20px sans-serif';
         ctx.fillText(`✗ ${lastError.char}`, drawX, word.y - 34);
       }
@@ -412,7 +418,7 @@ export class FallingWordGame extends GameEngine<GameState> {
 
     // 无锁定单词时的错误标注：在危险线上方居中绘制 ✗ <错误字符>
     if (errorActive && this.state.lockedWordIndex === null && lastError) {
-      ctx.fillStyle = '#f43f5e';
+      ctx.fillStyle = pal.danger;
       ctx.font = 'bold 22px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -424,9 +430,9 @@ export class FallingWordGame extends GameEngine<GameState> {
 
     // 倒计时
     if (this.state.isRunning && this.state.countdown > 0) {
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillStyle = pal.scrim;
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = '#38bdf8';
+      ctx.fillStyle = pal.accent;
       ctx.font = 'bold 80px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(String(this.state.countdown), width / 2, height / 2);
@@ -434,13 +440,13 @@ export class FallingWordGame extends GameEngine<GameState> {
 
     // 暂停遮罩
     if (this.state.isPaused) {
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillStyle = pal.scrim;
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = '#fbbf24';
+      ctx.fillStyle = pal.warn;
       ctx.font = 'bold 48px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('PAUSED', width / 2, height / 2);
-      ctx.fillStyle = '#f8fafc';
+      ctx.fillStyle = pal.ink;
       ctx.font = '20px sans-serif';
       ctx.fillText('按 Ctrl+P 继续', width / 2, height / 2 + 40);
     }
@@ -448,7 +454,7 @@ export class FallingWordGame extends GameEngine<GameState> {
     // 通关横幅：升关后 ~1.2s 内居中提示，强化「过关」正反馈
     const flashAt = this.state.levelClearFlashAt;
     if (this.state.isRunning && flashAt !== undefined && now - flashAt < 1200) {
-      ctx.fillStyle = '#22c55e';
+      ctx.fillStyle = pal.success;
       ctx.font = 'bold 32px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -457,25 +463,25 @@ export class FallingWordGame extends GameEngine<GameState> {
 
     // 通关成功（胜利）遮罩
     if (this.state.victory) {
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillStyle = pal.scrim;
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = '#22c55e';
+      ctx.fillStyle = pal.success;
       ctx.font = 'bold 42px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('通关成功！', width / 2, height / 2 - 20);
-      ctx.fillStyle = '#f8fafc';
+      ctx.fillStyle = pal.ink;
       ctx.font = '24px sans-serif';
       ctx.fillText(`最终得分: ${this.state.score}`, width / 2, height / 2 + 30);
     }
 
     if (!this.state.isRunning && this.state.lives <= 0) {
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillStyle = pal.scrim;
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = '#f43f5e';
+      ctx.fillStyle = pal.danger;
       ctx.font = 'bold 42px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('GAME OVER', width / 2, height / 2 - 20);
-      ctx.fillStyle = '#f8fafc';
+      ctx.fillStyle = pal.ink;
       ctx.font = '24px sans-serif';
       ctx.fillText(`最终得分: ${this.state.score}`, width / 2, height / 2 + 30);
     }

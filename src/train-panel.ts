@@ -21,6 +21,7 @@ import type { KeyboardRenderer } from './keyboard.js';
 import type { VocabularyBank } from './vocabulary.js';
 import type { UserProgress } from './storage.js';
 import type { ReviewScheduler } from './review.js';
+import { alpha, THEMES, type CanvasPalette } from './theme.js';
 
 /** 单词练习每次取词数量 */
 const WORD_COUNT = 20;
@@ -196,12 +197,6 @@ const FINGER_COLORS: Record<Finger, string> = {
   unknown: '#94a3b8',
 };
 
-/** 左右手底色（与 keyboard.ts CSS 保持一致） */
-const HAND_FILL: Record<Hand, string> = {
-  left: '#17324f',
-  right: '#3d2340',
-};
-
 /** 手指名称映射（用于提示文字） */
 const FINGER_NAMES: Record<Finger, string> = {
   pinky: '小指',
@@ -329,14 +324,22 @@ class MiniKeyboardCanvas {
   private pressTimer: number | null = null;
   private errorCode: string | null = null;
   private errorTimer: number | null = null;
+  /** 版面色取色函数（默认深空夜，TrainPanel 注入 ThemeManager.provider()） */
+  private readonly getPalette: () => CanvasPalette;
 
-  constructor(canvas: HTMLCanvasElement | null) {
+  constructor(canvas: HTMLCanvasElement | null, getPalette?: () => CanvasPalette) {
+    this.getPalette = getPalette ?? (() => THEMES.night.canvas);
     if (!canvas) {
       return;
     }
     canvas.width = MINI_CANVAS_W;
     canvas.height = MINI_CANVAS_H;
     this.ctx = canvas.getContext('2d');
+    this.draw();
+  }
+
+  /** 主题切换后重绘缩略键盘（不重建实例，保留 hint/layer/pressed 状态） */
+  redraw(): void {
     this.draw();
   }
 
@@ -403,7 +406,7 @@ class MiniKeyboardCanvas {
       return;
     }
     ctx.clearRect(0, 0, MINI_CANVAS_W, MINI_CANVAS_H);
-    ctx.fillStyle = '#0f172a';
+    ctx.fillStyle = this.getPalette().board;
     ctx.fillRect(0, 0, MINI_CANVAS_W, MINI_CANVAS_H);
 
     for (let rowIdx = 0; rowIdx < MINI_ROWS.length; rowIdx++) {
@@ -433,30 +436,31 @@ class MiniKeyboardCanvas {
     const isPressed = !isError && this.pressedCode === key.code;
     const isHint = !isPressed && !isError && this.hintCode === key.code;
     const isLayer = !isPressed && !isError && !isHint && this.layerCodes.has(key.code);
+    const pal = this.getPalette();
 
     ctx.save();
     if (isError) {
-      ctx.fillStyle = '#f43f5e';
+      ctx.fillStyle = pal.danger;
     } else if (isPressed) {
-      ctx.fillStyle = '#38bdf8';
+      ctx.fillStyle = pal.accent;
     } else if (isHint) {
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+      ctx.fillStyle = alpha(pal.accent, 0.35);
     } else if (isLayer) {
-      ctx.fillStyle = 'rgba(99, 102, 241, 0.3)';
+      ctx.fillStyle = alpha(pal.accent, 0.3);
     } else {
-      ctx.fillStyle = HAND_FILL[key.hand];
+      ctx.fillStyle = key.hand === 'left' ? pal.handLeft : pal.handRight;
     }
 
     if (isError) {
-      ctx.strokeStyle = '#f43f5e';
+      ctx.strokeStyle = pal.danger;
       ctx.lineWidth = 2;
-      ctx.shadowColor = '#f43f5e';
+      ctx.shadowColor = pal.danger;
       ctx.shadowBlur = 12;
     } else if (isHint || isPressed) {
-      ctx.strokeStyle = '#38bdf8';
+      ctx.strokeStyle = pal.accent;
       ctx.lineWidth = 2;
       if (isHint) {
-        ctx.shadowColor = '#38bdf8';
+        ctx.shadowColor = pal.accent;
         ctx.shadowBlur = 10;
       }
     } else {
@@ -469,7 +473,7 @@ class MiniKeyboardCanvas {
     ctx.stroke();
     ctx.restore();
 
-    ctx.fillStyle = isPressed ? '#0f172a' : '#f8fafc';
+    ctx.fillStyle = isPressed ? pal.onAccent : pal.ink;
     ctx.font = key.width ? '600 12px "Segoe UI", sans-serif' : '700 13px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -575,6 +579,8 @@ export interface TrainPanelDeps {
   review?: ReviewScheduler;
   /** 获取当前用户名（结果弹窗展示用） */
   currentUser: () => string;
+  /** 取色函数：缩略键盘绘制时实时读当前主题版面色，切主题不重建实例 */
+  getPalette?: () => CanvasPalette;
 }
 
 /**
@@ -653,7 +659,10 @@ export class TrainPanel {
     this.deps = deps;
     this.cacheDom();
     const canvas = document.getElementById('keyboard-ref');
-    this.miniKeyboard = new MiniKeyboardCanvas(canvas instanceof HTMLCanvasElement ? canvas : null);
+    this.miniKeyboard = new MiniKeyboardCanvas(
+      canvas instanceof HTMLCanvasElement ? canvas : null,
+      deps.getPalette
+    );
     const handsContainer = document.getElementById('mini-hands-diagram');
     this.miniHands = new MiniHandsDiagram(handsContainer);
     this.bindEvents();
@@ -663,6 +672,11 @@ export class TrainPanel {
     this.initWordSelector();
     this.updatePhaseIndicator();
     this.preparePreview();
+  }
+
+  /** 主题切换后重绘缩略键盘（DOM 部分由 CSS 变量自动换肤） */
+  redraw(): void {
+    this.miniKeyboard.redraw();
   }
 
   /** 释放面板持有的监听器与定时器 */

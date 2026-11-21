@@ -1,5 +1,6 @@
 import { GameEngine, lengthSpeedFactor, type GameEngineOptions } from './game-engine.js';
 import { ParticleSystem } from './particle-system.js';
+import { alpha } from './theme.js';
 import type { Zombie, ZombieKind, ZombieState } from './types.js';
 
 /** 坚守多少波后判定「防守成功」 */
@@ -360,7 +361,13 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     this.sfx?.('levelup');
     // 波次礼花：居中扩散 + 冲击环
     this.particles.burst(this.canvas.width / 2, this.canvas.height / 2, 'levelup');
-    this.particles.ring(this.canvas.width / 2, this.canvas.height / 2, '#22c55e', 20, 480);
+    this.particles.ring(
+      this.canvas.width / 2,
+      this.canvas.height / 2,
+      this.getPalette().success,
+      20,
+      480
+    );
     this.emitUpdate();
   }
 
@@ -608,6 +615,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
 
   protected draw(): void {
     const ctx = this.ctx;
+    const pal = this.getPalette();
     const width = this.canvas.width;
     const height = this.canvas.height;
     const now = performance.now();
@@ -618,7 +626,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     ctx.clearRect(0, 0, width, height);
 
     // 背景网格
-    ctx.strokeStyle = '#1e293b';
+    ctx.strokeStyle = pal.grid;
     ctx.lineWidth = 1;
     for (let i = 0; i < width; i += 40) {
       ctx.beginPath();
@@ -628,13 +636,13 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     }
 
     // 基地线
-    ctx.strokeStyle = '#22c55e';
+    ctx.strokeStyle = pal.success;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(0, height - 30);
     ctx.lineTo(width, height - 30);
     ctx.stroke();
-    ctx.fillStyle = '#22c55e';
+    ctx.fillStyle = pal.success;
     ctx.font = '16px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
@@ -646,7 +654,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     // 浮动提示
     for (const e of this.state.effects) {
       const t = (now - e.at) / EFFECT_TTL;
-      ctx.fillStyle = `rgba(248, 250, 252, ${1 - t})`;
+      ctx.fillStyle = alpha(pal.ink, 1 - t);
       ctx.font = 'bold 18px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -673,21 +681,21 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
       const typedWidth = ctx.measureText(typed).width;
       const startX = z.x - fullWidth / 2;
       const textY = z.y - bodyH / 2 - 24;
-      ctx.fillStyle = errorLocked ? '#f43f5e' : '#22c55e';
+      ctx.fillStyle = errorLocked ? pal.danger : pal.success;
       ctx.fillText(typed, startX + typedWidth / 2, textY);
-      ctx.fillStyle = errorLocked ? '#fca5a5' : '#f8fafc';
+      ctx.fillStyle = errorLocked ? pal.dangerSoft : pal.ink;
       ctx.fillText(untyped, startX + typedWidth + ctx.measureText(untyped).width / 2, textY);
 
       // 头部血条（全僵尸，逐字符平滑掉血；坦克三段变色）
       const barY = z.y - bodyH / 2 - 12;
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
+      ctx.fillStyle = alpha(pal.board, 0.6);
       ctx.fillRect(z.x - bodyW / 2, barY, bodyW, 4);
       ctx.fillStyle = zombieBarColor(z.kind, z.hp);
       ctx.fillRect(z.x - bodyW / 2, barY, bodyW * headBarFraction(z), 4);
 
       // 命中白闪
       if (z.flashUntil !== undefined && now < z.flashUntil) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.fillStyle = alpha(pal.ink, 0.55);
         ctx.fillRect(z.x - bodyW / 2, z.y - bodyH / 2, bodyW, bodyH);
       }
     }
@@ -700,7 +708,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
 
     // 错误字符标注
     if (errorActive && lastError) {
-      ctx.fillStyle = '#f43f5e';
+      ctx.fillStyle = pal.danger;
       ctx.font = 'bold 22px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -709,9 +717,9 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
 
     // 倒计时
     if (this.state.isRunning && this.state.countdown > 0) {
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillStyle = pal.scrim;
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = '#38bdf8';
+      ctx.fillStyle = pal.accent;
       ctx.font = 'bold 80px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(String(this.state.countdown), width / 2, height / 2);
@@ -719,9 +727,9 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
 
     // 暂停遮罩
     if (this.state.isPaused) {
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillStyle = pal.scrim;
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = '#fbbf24';
+      ctx.fillStyle = pal.warn;
       ctx.font = 'bold 48px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('PAUSED', width / 2, height / 2);
@@ -730,7 +738,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     // 波次横幅
     const flashAt = this.state.levelClearFlashAt;
     if (this.state.isRunning && flashAt !== undefined && now - flashAt < 1200) {
-      ctx.fillStyle = '#22c55e';
+      ctx.fillStyle = pal.success;
       ctx.font = 'bold 32px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -741,7 +749,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     if (this.state.victory || (!this.state.isRunning && this.state.lives <= 0)) {
       this.drawSettlement(
         this.state.victory ? '防守成功！' : '基地失守',
-        this.state.victory ? '#22c55e' : '#f43f5e'
+        this.state.victory ? pal.success : pal.danger
       );
     }
   }
@@ -761,6 +769,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     const ctx = this.ctx;
     const { w, h } = zombieDims(z.kind);
     const palette = ZOMBIE_PALETTE[z.kind];
+    const pal = this.getPalette();
     const skin = frozen ? '#7dd3fc' : palette.skin;
     const clothes = frozen ? '#38bdf8' : palette.clothes;
     const phase = now / 260 + z.id * 0.7;
@@ -841,7 +850,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
 
     // 锁定/错误描边
     if (isLocked) {
-      ctx.strokeStyle = errorLocked ? '#f43f5e' : '#fbbf24';
+      ctx.strokeStyle = errorLocked ? pal.danger : pal.warn;
       ctx.lineWidth = 2;
       ctx.strokeRect(-w * 0.42, -h * 0.56, w * 0.84, h * 1.08);
     }
@@ -852,17 +861,18 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
   /** 结算页：得分 / 坚守波次 / 击杀 / 道具 */
   private drawSettlement(title: string, color: string): void {
     const ctx = this.ctx;
+    const pal = this.getPalette();
     const width = this.canvas.width;
     const height = this.canvas.height;
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+    ctx.fillStyle = pal.scrimHeavy;
     ctx.fillRect(0, 0, width, height);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = color;
     ctx.font = 'bold 42px sans-serif';
     ctx.fillText(title, width / 2, height / 2 - 60);
-    ctx.fillStyle = '#f8fafc';
+    ctx.fillStyle = pal.ink;
     ctx.font = '24px sans-serif';
     ctx.fillText(`最终得分: ${this.state.score}`, width / 2, height / 2);
     ctx.fillText(`坚守波次: ${this.state.wavesCleared}`, width / 2, height / 2 + 35);

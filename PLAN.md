@@ -417,7 +417,7 @@ type-prime/
 
 - 音效系统 `src/sound-manager.ts`（已实现）。
 - 粒子系统 `src/particle-system.ts`（已实现）。
-- 主题切换、键盘动画、Canvas 分层渲染。
+- 主题切换（已实现，见 §10.4.3）、键盘动画、Canvas 分层渲染。
 - 可选 WebGL/PixiJS 评估。
 
 ##### 4.1 音效系统实现口径（已交付）
@@ -442,6 +442,19 @@ type-prime/
 - 取代与保留：装饰性 emoji 飘字（💥/✦/💨/🥀）改由粒子表现；带信息量的文案飘字（🔧 基地+1 / ❄ 冻结2s / +50 / ✗错字符）与闯关射击的扩散环特效保留。
 - 测试与验证：`particle-system.test.ts` 23 例（预设表合法性与覆盖、发射数量与 scale、rng 恒 0 时方向/颜色/寿命可预测、dt 推进与重力/阻尼、寿命到期移除、步长上限、池上限、clear、四种形状的绘制调用与 globalAlpha 淡出）；三个游戏各补粒子断言（击杀/命中/落地/触底/消散/reset 清池）；浏览器用「全项目仅粒子系统写 ctx.globalAlpha」这一事实做写入计数探针，实测三模式粒子渲染且装饰 emoji 归零、控制台零报错。
 - 未采取方案：图片/精灵图粒子（违反零资源口径）、第三方粒子库（新依赖）、把粒子放进 state（污染 onUpdate 与测试快照）、每帧新建粒子数组（GC 抖动）。
+
+##### 4.3 主题切换实现口径（已交付）
+
+- 三主题：深空夜 night（默认，原深色版面色）/ 纸墨白 paper（浅色护眼）/ 磷光绿 phosphor（复古终端）。顶栏新增「主题」下拉 + 全局快捷键 `Ctrl+Shift+6` 循环（不用 Ctrl+Shift+T 是被浏览器「恢复关闭的标签页」占用）；F1 帮助「全局」组与页脚补对应行。
+- 双源配色、各自单一来源：DOM 侧全部走 `style.css` 的 `html[data-theme]` 变量块（含 `--board/--on-accent/--kbd-bg/--hand-left/--hand-right` 与半透明 tint 用的 `--*-rgb` 三元组）；Canvas 侧集中在 `src/theme.ts` 的纯数据表 `THEMES[name].canvas`（17 个 token：board/grid/ink/muted/accent/accentSoft/success/danger/dangerHot/dangerSoft/warn/onAccent/scrim/scrimHeavy/shadow/handLeft/handRight）。不在 TS 里重复维护 CSS 值，也不在 CSS 里写 Canvas 色。
+- 世界色不随主题变：僵尸躯体配色、植物炮台、炮弹、粒子预设、手指身份色、BOSS 紫、冻结蓝属于「游戏世界标识色」，三主题下恒定（均为饱和中间调，深浅底都可读）；随主题变的只有版面色（底/网格/文字/遮罩/语义色/左右手底色）。
+- 取色不重建实例：`GameEngineOptions.getPalette?: () => CanvasPalette`，基类持有 `protected readonly getPalette`（缺省夜），`main.ts` 注入 `ThemeManager.provider()`（活取色函数）；三个游戏与缩略键盘的绘制代码只从 token 取色，半透明处用 `alpha(hex, a)` 复用版面色。基类新增 `redraw()`、`TrainPanel.redraw()` 供主题变更时刷新静止画面（运行中由 rAF 自然覆盖）。
+- ThemeManager 职责：持有当前主题、读写 `typeprime_theme`（存储不可用时仅内存生效）、同步 `html[data-theme]`、`onChange` 广播（返回退订函数）、`cycle()` 按 THEME_ORDER 循环；`set` 同值早退避免重复通知与写存储。
+- 首屏防闪烁：`index.html` 头部内联脚本在样式生效前读存储写 `data-theme`，`<html>` 默认带 `data-theme="night"` 兜底；ThemeManager 构造后再 `applyDom()` 一次。
+- 焦点保护：主题下拉在顶栏（四个面板都可操作），focus 时同时 `suspendTrainInput()` + 置 `gameControlFocused`，blur/change 后 `releaseUserControlFocus()` 交还焦点，避免训练/游戏隐藏输入框的自动重聚焦抢走下拉焦点。
+- 可读性顺手修复：强调色实底按钮/激活标签内的 kbd 改为继承按钮文字色 + 透明底 + 同色描边（原 muted 灰在亮底上对比不足）；`.train-level-select` 加 flex-wrap 与 label/hint 不收缩，修复窄视口下层级提示被挤成竖排单字。
+- 测试与验证：`theme.test.ts` 22 例（主题表完整性与三主题可辨识、alpha 钳制与非 hex 原样、isThemeName/loadStoredTheme 回退、set/cycle/provider/onChange/存储不可用、三游戏 redraw 取色接线与「换色不重建实例」）；`train-panel.test.ts` 补 3 例缩略键盘取色与 redraw。浏览器实测：三主题 DOM 变量与 Canvas 取色探针逐色核对、三模式可玩、快捷键循环、刷新持久化、运行中/练习中切主题不抢焦点不打断、控制台零报错。
+- 未采取方案：CSS `color-mix()`（旧浏览器不支持会整片丢背景）、在 TS 里读 `getComputedStyle` 取 Canvas 色（每帧读样式性能差且 jsdom 不可测）、切主题重建游戏实例（打断当前局）、把主题色混进世界色（破坏僵尸/手指的认知一致性）。
 
 #### 5. 测试（已覆盖）
 

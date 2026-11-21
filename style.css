@@ -1,4 +1,11 @@
-:root {
+/* ---------------------------------------------------------------------------
+ * 主题配色（DOM 侧唯一色源）
+ * html[data-theme] 由 src/theme.ts 的 ThemeManager 写入；
+ * Canvas 侧对应色值见 src/theme.ts 的 THEMES[*].canvas，两处需同步维护。
+ * 手指身份色（pinky/ring/middle/index/thumb）不随主题变，保证指法认知一致。
+ * ------------------------------------------------------------------------- */
+:root,
+html[data-theme='night'] {
   --bg: #0f172a;
   --panel-bg: #1e293b;
   --text: #f8fafc;
@@ -9,10 +16,104 @@
   --warn: #f59e0b;
   --surface: #1e293b;
   --border: #334155;
+  /* 画布底色 / 强调色上的文字 / 键帽底色 / 左右手底色 */
+  --board: #020617;
+  --on-accent: #0f172a;
+  --kbd-bg: #334155;
+  --hand-left: #17324f;
+  --hand-right: #3d2340;
+  /* 半透明 tint 用的 RGB 三元组（rgba(var(--x-rgb), a)） */
+  --accent-rgb: 56, 189, 248;
+  --danger-rgb: 244, 63, 94;
+  --success-rgb: 34, 197, 94;
+  --warn-rgb: 245, 158, 11;
+  --muted-rgb: 148, 163, 184;
+  --border-rgb: 51, 65, 85;
+  --hand-left-rgb: 23, 50, 79;
+  --hand-right-rgb: 61, 35, 64;
+}
+
+/* 纸墨白：浅色护眼，适合白天长时间练习 */
+html[data-theme='paper'] {
+  --bg: #f5f1e8;
+  --panel-bg: #fffdf7;
+  --text: #1c2431;
+  --muted: #5b6472;
+  --accent: #0369a1;
+  --danger: #be123c;
+  --success: #15803d;
+  --warn: #b45309;
+  --surface: #fffdf7;
+  --border: #d8d2c4;
+  --board: #fbf7ee;
+  --on-accent: #fffdf7;
+  --kbd-bg: #e7e1d3;
+  --hand-left: #e0ecf7;
+  --hand-right: #f7e3ec;
+  --accent-rgb: 3, 105, 161;
+  --danger-rgb: 190, 18, 60;
+  --success-rgb: 21, 128, 61;
+  --warn-rgb: 180, 83, 9;
+  --muted-rgb: 91, 100, 114;
+  --border-rgb: 216, 210, 196;
+  --hand-left-rgb: 224, 236, 247;
+  --hand-right-rgb: 247, 227, 236;
+}
+
+/* 磷光绿：复古终端风，低亮度环境下高对比 */
+html[data-theme='phosphor'] {
+  --bg: #05130b;
+  --panel-bg: #0a1f12;
+  --text: #d1fae5;
+  --muted: #4d8f68;
+  --accent: #4ade80;
+  --danger: #fb7185;
+  --success: #a3e635;
+  --warn: #facc15;
+  --surface: #0a1f12;
+  --border: #1d4a2c;
+  --board: #020a05;
+  --on-accent: #05130b;
+  --kbd-bg: #123524;
+  --hand-left: #0c2b1a;
+  --hand-right: #2b2410;
+  --accent-rgb: 74, 222, 128;
+  --danger-rgb: 251, 113, 133;
+  --success-rgb: 163, 230, 53;
+  --warn-rgb: 250, 204, 21;
+  --muted-rgb: 77, 143, 104;
+  --border-rgb: 29, 74, 44;
+  --hand-left-rgb: 12, 43, 26;
+  --hand-right-rgb: 43, 36, 16;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* 滚动条跟随主题版面色，避免浏览器默认灰条割裂画面 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid var(--bg);
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
 }
 
 body {
@@ -21,6 +122,9 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease;
 }
 
 #app {
@@ -47,7 +151,7 @@ body {
 .top-bar h1 .brand-en {
   font-size: 1rem;
   font-weight: 500;
-  color: var(--text-muted, #94a3b8);
+  color: var(--muted);
   letter-spacing: 0.04em;
 }
 
@@ -55,6 +159,20 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 顶栏两组控件（主题 / 用户）之间的分隔线 */
+.header-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.user-section label {
+  font-size: 0.9rem;
+  color: var(--muted);
 }
 
 .user-section select,
@@ -71,13 +189,24 @@ body {
 .user-section select {
   background: var(--panel-bg);
   color: var(--text);
-  border: 1px solid #334155;
+  border: 1px solid var(--border);
+}
+
+/* 主题下拉：左侧强调色条随主题变化，给出即时视觉反馈 */
+#theme-select {
+  border-left: 3px solid var(--accent);
+  font-weight: 600;
+}
+
+select option {
+  background: var(--panel-bg);
+  color: var(--text);
 }
 
 .user-section button,
 .game-controls button {
   background: var(--accent);
-  color: #0f172a;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -99,7 +228,7 @@ body {
 
 .tab-btn.active {
   background: var(--accent);
-  color: #0f172a;
+  color: var(--on-accent);
 }
 
 .panel {
@@ -107,6 +236,7 @@ body {
   background: var(--panel-bg);
   border-radius: 12px;
   padding: 20px;
+  transition: background-color 0.25s ease;
 }
 
 .panel.active {
@@ -130,7 +260,7 @@ body {
 .key {
   width: 44px;
   height: 44px;
-  background: #334155;
+  background: var(--kbd-bg);
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -167,16 +297,16 @@ body {
 
 /* 左右手底色区分（左手冷色、右手暖色） */
 .key.hand-left {
-  background: #17324f;
+  background: var(--hand-left);
 }
 
 .key.hand-right {
-  background: #3d2340;
+  background: var(--hand-right);
 }
 
 .key.active {
   background: var(--accent);
-  color: #0f172a;
+  color: var(--on-accent);
   transform: scale(1.1);
   box-shadow: 0 0 12px var(--accent);
 }
@@ -244,9 +374,9 @@ body {
   width: 100%;
   max-width: 800px;
   height: auto;
-  background: #020617;
+  background: var(--board);
   border-radius: 8px;
-  border: 2px solid #334155;
+  border: 2px solid var(--border);
 }
 
 .game-controls {
@@ -271,7 +401,7 @@ th,
 td {
   padding: 12px;
   text-align: left;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid var(--border);
 }
 
 th {
@@ -314,11 +444,11 @@ th {
 }
 
 .hand.hand-left {
-  background: rgba(23, 50, 79, 0.55);
+  background: rgba(var(--hand-left-rgb), 0.55);
 }
 
 .hand.hand-right {
-  background: rgba(61, 35, 64, 0.55);
+  background: rgba(var(--hand-right-rgb), 0.55);
 }
 
 .hand-label {
@@ -337,7 +467,7 @@ th {
 .finger {
   width: 18px;
   border-radius: 10px 10px 4px 4px;
-  background: #334155;
+  background: var(--kbd-bg);
   border: 2px solid transparent;
   transition: all 0.15s ease;
 }
@@ -388,7 +518,7 @@ th {
   50% {
     box-shadow:
       0 0 20px var(--accent),
-      0 0 30px rgba(56, 189, 248, 0.4);
+      0 0 30px rgba(var(--accent-rgb), 0.4);
   }
 }
 
@@ -440,13 +570,13 @@ th {
 }
 
 .legend-dot.hand-left {
-  border-color: #17324f;
-  background: #17324f;
+  border-color: var(--hand-left);
+  background: var(--hand-left);
 }
 
 .legend-dot.hand-right {
-  border-color: #3d2340;
-  background: #3d2340;
+  border-color: var(--hand-right);
+  background: var(--hand-right);
 }
 
 #game-input {
@@ -487,7 +617,7 @@ th {
 
 .train-tab-btn.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 
@@ -513,11 +643,13 @@ th {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .train-level-select label {
   color: var(--muted);
   font-size: 0.9rem;
+  flex-shrink: 0;
 }
 
 .train-level-select select {
@@ -527,6 +659,7 @@ th {
   background: var(--surface);
   color: var(--text);
   font-size: 0.9rem;
+  max-width: 100%;
 }
 
 .train-word-select {
@@ -686,7 +819,7 @@ th {
 .text-input .char.incorrect {
   color: var(--danger);
   font-weight: 700;
-  background: rgba(244, 63, 94, 0.15);
+  background: rgba(var(--danger-rgb), 0.15);
   border-radius: 3px;
 }
 
@@ -770,7 +903,7 @@ th {
 
 .btn-accent {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 
@@ -794,7 +927,7 @@ th {
   min-height: 1.5em;
   padding: 0.25rem 0.75rem;
   border-radius: 6px;
-  background: rgba(56, 189, 248, 0.08);
+  background: rgba(var(--accent-rgb), 0.08);
   transition: all 0.2s;
 }
 
@@ -824,11 +957,11 @@ th {
 }
 
 .mini-hand--left {
-  background: rgba(23, 50, 79, 0.6);
+  background: rgba(var(--hand-left-rgb), 0.6);
 }
 
 .mini-hand--right {
-  background: rgba(61, 35, 64, 0.6);
+  background: rgba(var(--hand-right-rgb), 0.6);
 }
 
 .mini-hand-label {
@@ -848,7 +981,7 @@ th {
 .mini-finger {
   width: 12px;
   border-radius: 7px 7px 3px 3px;
-  background: #334155;
+  background: var(--kbd-bg);
   border: 1.5px solid transparent;
   transition: all 0.2s ease;
 }
@@ -883,7 +1016,7 @@ th {
   transform: scaleY(1.15);
   box-shadow:
     0 0 10px var(--accent),
-    0 0 20px rgba(56, 189, 248, 0.3);
+    0 0 20px rgba(var(--accent-rgb), 0.3);
   animation: mini-finger-pulse 1s ease-in-out infinite;
 }
 
@@ -892,12 +1025,12 @@ th {
   100% {
     box-shadow:
       0 0 10px var(--accent),
-      0 0 20px rgba(56, 189, 248, 0.3);
+      0 0 20px rgba(var(--accent-rgb), 0.3);
   }
   50% {
     box-shadow:
       0 0 16px var(--accent),
-      0 0 30px rgba(56, 189, 248, 0.5);
+      0 0 30px rgba(var(--accent-rgb), 0.5);
   }
 }
 
@@ -938,7 +1071,7 @@ th {
 }
 
 .key--layer {
-  background: rgba(99, 102, 241, 0.15) !important;
+  background: rgba(var(--accent-rgb), 0.15) !important;
   border-color: var(--accent) !important;
 }
 
@@ -1011,11 +1144,24 @@ kbd {
   font-family: 'Segoe UI', monospace;
   line-height: 1.4;
   color: var(--muted);
-  background: rgba(51, 65, 85, 0.6);
+  background: rgba(var(--border-rgb), 0.6);
   border: 1px solid var(--border);
   border-radius: 3px;
   vertical-align: middle;
   margin-left: 4px;
+}
+
+/* 强调色实底按钮/标签内的 kbd：muted 灰在亮底上对比不足，
+   改为继承按钮文字色（on-accent）+ 透明底 + 同色描边 */
+.game-controls button kbd,
+.tab-btn.active kbd,
+.train-tab-btn.active kbd,
+.btn-accent kbd,
+.user-section button kbd {
+  color: inherit;
+  background: transparent;
+  border-color: currentColor;
+  opacity: 0.75;
 }
 
 /* ===== Training Status Indicator ===== */
@@ -1033,18 +1179,18 @@ kbd {
 }
 
 .status-badge.idle {
-  background: rgba(100, 116, 139, 0.2);
+  background: rgba(var(--muted-rgb), 0.2);
   color: var(--muted);
 }
 
 .status-badge.active {
-  background: rgba(56, 189, 248, 0.2);
+  background: rgba(var(--accent-rgb), 0.2);
   color: var(--accent);
   animation: status-pulse 2s ease-in-out infinite;
 }
 
 .status-badge.completed {
-  background: rgba(34, 197, 94, 0.2);
+  background: rgba(var(--success-rgb), 0.2);
   color: var(--success);
 }
 
@@ -1129,7 +1275,7 @@ kbd {
 
 .help-section td {
   padding: 0.3rem 0.5rem;
-  border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+  border-bottom: 1px solid rgba(var(--border-rgb), 0.4);
   font-size: 0.85rem;
 }
 
@@ -1178,6 +1324,7 @@ kbd {
   font-size: 0.75rem;
   color: var(--muted);
   margin-left: 0.5rem;
+  flex-shrink: 0;
 }
 
 /* ===== Phase select ===== */
@@ -1199,7 +1346,7 @@ kbd {
   padding: 0.3rem 0.8rem;
   border: 1px solid var(--accent);
   border-radius: 16px;
-  background: rgba(56, 189, 248, 0.08);
+  background: rgba(var(--accent-rgb), 0.08);
   color: var(--accent);
   font-size: 0.85rem;
   font-weight: 600;
@@ -1357,25 +1504,25 @@ kbd {
 .mastery-new {
   color: var(--muted);
   border-color: var(--border);
-  background: rgba(148, 163, 184, 0.1);
+  background: rgba(var(--muted-rgb), 0.1);
 }
 
 .mastery-learning {
   color: var(--warn);
   border-color: var(--warn);
-  background: rgba(245, 158, 11, 0.12);
+  background: rgba(var(--warn-rgb), 0.12);
 }
 
 .mastery-reviewing {
   color: var(--accent);
   border-color: var(--accent);
-  background: rgba(56, 189, 248, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
 }
 
 .mastery-mastered {
   color: var(--success);
   border-color: var(--success);
-  background: rgba(34, 197, 94, 0.12);
+  background: rgba(var(--success-rgb), 0.12);
 }
 
 /* 添加 / 编辑表单 */
@@ -1521,7 +1668,7 @@ kbd {
 .dialog-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.25);
 }
 
 .dialog-actions {

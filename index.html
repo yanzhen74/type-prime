@@ -1,16 +1,35 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="night">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>打字基本法 Type Prime</title>
-    <link rel="stylesheet" href="style.css?v=3" />
+    <script>
+      // 首屏防闪烁：在样式生效前套用已保存的主题（存储键与 src/theme.ts 一致）
+      try {
+        var savedTheme = localStorage.getItem('typeprime_theme');
+        if (savedTheme === 'night' || savedTheme === 'paper' || savedTheme === 'phosphor') {
+          document.documentElement.dataset.theme = savedTheme;
+        }
+      } catch (e) {
+        /* 存储不可用时保留默认深空夜 */
+      }
+    </script>
+    <link rel="stylesheet" href="style.css?v=5" />
   </head>
   <body>
     <div id="app">
       <header class="top-bar">
         <h1>打字基本法 <span class="brand-en">Type Prime</span></h1>
         <div class="user-section">
+          <label for="theme-select">主题</label>
+          <select id="theme-select" aria-label="配色主题">
+            <option value="night">深空夜</option>
+            <option value="paper">纸墨白</option>
+            <option value="phosphor">磷光绿</option>
+          </select>
+          <kbd>Ctrl+Shift+6</kbd>
+          <span class="header-divider" aria-hidden="true"></span>
           <label for="user-select">当前用户：</label>
           <select id="user-select"></select>
           <kbd>Ctrl+Shift+U</kbd>
@@ -360,6 +379,10 @@
                   <td><kbd>Ctrl+Shift+U</kbd></td>
                   <td>循环切换用户</td>
                 </tr>
+                <tr>
+                  <td><kbd>Ctrl+Shift+6</kbd></td>
+                  <td>循环切换主题：深空夜/纸墨白/磷光绿</td>
+                </tr>
               </table>
             </div>
             <div class="help-section">
@@ -446,6 +469,7 @@
         <span><kbd>Ctrl+1/2/3/4</kbd> 切换面板</span>
         <span><kbd>F1</kbd> 帮助</span>
         <span><kbd>Ctrl+Shift+U</kbd> 切换用户</span>
+        <span><kbd>Ctrl+Shift+6</kbd> 主题</span>
         <span><kbd>Ctrl+Shift+1/2/3</kbd> 游戏模式</span>
         <span><kbd>Ctrl+↑↓/←→</kbd> 等级/倍率</span>
         <span><kbd>Enter</kbd> 开始</span>
@@ -453,6 +477,6 @@
       </footer>
     </div>
 
-    <script type="module" src="dist/main.js?v=3"></script>
+    <script type="module" src="dist/main.js?v=5"></script>
   </body>
 </html>

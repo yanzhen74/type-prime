@@ -10,6 +10,7 @@ import { ReviewScheduler } from './review.js';
 import { VocabPanel } from './vocab-panel.js';
 import { Dialog } from './dialog.js';
 import { SoundManager, type GameSfx } from './sound-manager.js';
+import { ThemeManager, isThemeName } from './theme.js';
 import type { GameBaseState } from './types.js';
 
 /** 游戏难度设置（持久化到 localStorage） */
@@ -43,6 +44,8 @@ const GAME_MODE_CODES: Record<string, GameSettings['mode']> = {
 const WORD_SOURCE_CODE = 'Digit4';
 /** Ctrl+Shift+5 切换音效开关 */
 const SOUND_CODE = 'Digit5';
+/** Ctrl+Shift+6 循环切换主题（全局生效；不用 Ctrl+Shift+T 是因为被浏览器「恢复关闭的标签页」占用） */
+const THEME_CODE = 'Digit6';
 /** 起始等级循环范围 */
 const START_LEVEL_MIN = 1;
 const START_LEVEL_MAX = 10;
@@ -92,6 +95,10 @@ class App {
   private gameSoundSelect = document.getElementById('game-sound') as HTMLSelectElement | null;
   /** 音效播放器：三个游戏模式共用，可整体开关 */
   private readonly sound = new SoundManager();
+  /** 主题管理器：DOM 变量与 Canvas 取色的单一入口，切换不重建游戏实例 */
+  private readonly theme = new ThemeManager();
+  /** 顶栏主题下拉（元素缺失时为 null，快捷键仍可用） */
+  private themeSelect = document.getElementById('theme-select') as HTMLSelectElement | null;
   /** 游戏面板设置控件持有焦点时为 true，用于抑制 #game-input 失焦自动重聚焦抢夺下拉焦点 */
   private gameControlFocused = false;
   /** 设置行提示位：快捷键调整后闪现当前值 */
@@ -100,6 +107,8 @@ class App {
 
   constructor() {
     this.storage = new UserProgress();
+    // 首屏即套用已保存主题（index.html 内联脚本已预先写入，此处兜底存储不可用等场景）
+    this.theme.applyDom();
     // 旧版训练面板 DOM（keyboard-container / finger-hint / hands-diagram）已随
     // #panel-train 重构移除，元素存在时才初始化旧渲染器，避免阻塞整个应用启动。
     if (
@@ -125,6 +134,7 @@ class App {
       progress: this.storage,
       review: this.review,
       currentUser: () => this.storage.getCurrentUser()?.name ?? 'Guest',
+      getPalette: this.theme.provider(),
     });
     this.vocabPanel = new VocabPanel({
       vocabulary: this.vocabulary,
@@ -142,6 +152,7 @@ class App {
 
     this.initTabs();
     this.initUserControls();
+    this.initTheme();
     this.initGameControls();
     this.initGameSettings();
     this.initKeyboardInput();
@@ -271,6 +282,47 @@ class App {
   }
 
   // -------------------------------------------------------------------------
+  // 全局主题（顶栏下拉 + Ctrl+Shift+6）
+  // -------------------------------------------------------------------------
+
+  /**
+   * 顶栏主题下拉：变更即换肤（DOM 变量 + Canvas 重绘），并做焦点保护。
+   * 主题位于顶栏而非游戏设置行，四个面板下均可操作，因此同时需要
+   * 训练输入框挂起与游戏输入框重聚焦抑制两套保护。
+   */
+  private initTheme(): void {
+    this.theme.onChange(() => {
+      this.game.redraw();
+      this.trainPanel.redraw();
+    });
+    const select = this.themeSelect;
+    if (!select) return;
+    select.value = this.theme.current;
+    select.addEventListener('change', () => {
+      if (isThemeName(select.value)) {
+        this.theme.set(select.value);
+      }
+      this.releaseUserControlFocus();
+    });
+    select.addEventListener('focus', () => {
+      this.suspendTrainInput();
+      this.gameControlFocused = true;
+    });
+    select.addEventListener('blur', () => {
+      this.gameControlFocused = false;
+      this.releaseUserControlFocus();
+    });
+  }
+
+  /** Ctrl+Shift+6：循环切换主题（全局生效，含训练/词库/排行榜面板） */
+  private cycleThemeByShortcut(): void {
+    const next = this.theme.cycle();
+    if (this.themeSelect) {
+      this.themeSelect.value = next;
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // 游戏难度设置（起始等级 / 速度倍率 / 词源）
   // -------------------------------------------------------------------------
 
@@ -327,6 +379,7 @@ class App {
         startingLevel: settings.startingLevel,
         speedMultiplier: settings.speedMultiplier,
         onSfx: this.gameSfxHandler(),
+        getPalette: this.theme.provider(),
       });
     }
     if (settings.mode === 'zombie') {
@@ -334,6 +387,7 @@ class App {
         startingLevel: settings.startingLevel,
         speedMultiplier: settings.speedMultiplier,
         onSfx: this.gameSfxHandler(),
+        getPalette: this.theme.provider(),
       });
     }
     return new FallingWordGame(
@@ -492,6 +546,7 @@ class App {
       speedMultiplier: settings.speedMultiplier,
       wordProvider: settings.wordSource === 'vocab' ? this.makeVocabWordProvider() : undefined,
       onSfx: this.gameSfxHandler(),
+      getPalette: this.theme.provider(),
     };
   }
 
@@ -773,6 +828,14 @@ class App {
           e.preventDefault();
           e.stopPropagation();
           this.cycleUser();
+          return;
+        }
+
+        // Ctrl+Shift+6: 循环切换主题（全局，不受面板与焦点位置限制）
+        if (e.ctrlKey && e.shiftKey && !e.altKey && e.code === THEME_CODE) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.cycleThemeByShortcut();
           return;
         }
 

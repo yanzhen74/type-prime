@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TrainPanel } from './train-panel.js';
+import { THEMES, type CanvasPalette } from './theme.js';
 import type { TypingEngine } from './input.js';
 import type { VocabularyBank, WordQueryOptions } from './vocabulary.js';
 import type { UserProgress } from './storage.js';
@@ -262,5 +263,94 @@ describe('TrainPanel 单词练习词库选择', () => {
     sel.dispatchEvent(new Event('change'));
 
     expect(calls[calls.length - 1].difficulties).toEqual([4, 5]);
+  });
+});
+
+describe('TrainPanel 缩略键盘主题取色', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mountFixture();
+  });
+
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  /** 补上 fixture 刻意省略的 #keyboard-ref canvas，并记录版面色写入 */
+  function mountKeyboardCanvas(): string[] {
+    const colors: string[] = [];
+    const base = { measureText: () => ({ width: 10 }) };
+    const ctx = new Proxy(base, {
+      get(target, prop) {
+        if (prop in target) return (target as Record<string | symbol, unknown>)[prop];
+        return () => undefined;
+      },
+      set(_target, prop, value) {
+        if (
+          (prop === 'fillStyle' || prop === 'strokeStyle' || prop === 'shadowColor') &&
+          typeof value === 'string'
+        ) {
+          colors.push(value);
+        }
+        return true;
+      },
+    }) as unknown as CanvasRenderingContext2D;
+
+    const canvas = document.createElement('canvas');
+    canvas.id = 'keyboard-ref';
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => ctx;
+    document.body.appendChild(canvas);
+    return colors;
+  }
+
+  function makePanel(getPalette?: () => CanvasPalette): TrainPanel {
+    const typingStub = {
+      on: () => () => {},
+      focus: () => {},
+    } as unknown as TypingEngine;
+    return new TrainPanel({
+      typingEngine: typingStub,
+      keyboard: null,
+      vocabulary: makeVocabStub(),
+      progress: makeProgressStub(),
+      currentUser: () => 'Tester',
+      getPalette,
+    });
+  }
+
+  it('注入纸墨白后底色/键帽字/左右手底色均跟随主题', () => {
+    const colors = mountKeyboardCanvas();
+    const panel = makePanel(() => THEMES.paper.canvas);
+
+    expect(colors).toContain(THEMES.paper.canvas.board);
+    expect(colors).toContain(THEMES.paper.canvas.ink);
+    expect(colors).toContain(THEMES.paper.canvas.handLeft);
+    expect(colors).toContain(THEMES.paper.canvas.handRight);
+    expect(colors).not.toContain(THEMES.night.canvas.board);
+    panel.destroy();
+  });
+
+  it('未注入取色函数时回退深空夜', () => {
+    const colors = mountKeyboardCanvas();
+    const panel = makePanel();
+
+    expect(colors).toContain(THEMES.night.canvas.board);
+    expect(colors).toContain(THEMES.night.canvas.handLeft);
+    panel.destroy();
+  });
+
+  it('redraw 用新主题重绘，不重建实例也不丢提示状态', () => {
+    const colors = mountKeyboardCanvas();
+    let current: CanvasPalette = THEMES.night.canvas;
+    const panel = makePanel(() => current);
+
+    colors.length = 0;
+    current = THEMES.phosphor.canvas;
+    panel.redraw();
+
+    expect(colors).toContain(THEMES.phosphor.canvas.board);
+    expect(colors).toContain(THEMES.phosphor.canvas.handRight);
+    expect(colors).not.toContain(THEMES.night.canvas.board);
+    panel.destroy();
   });
 });

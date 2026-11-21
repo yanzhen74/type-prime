@@ -1,5 +1,6 @@
 import { GameEngine, lengthSpeedFactor, type GameEngineOptions } from './game-engine.js';
 import { ParticleSystem } from './particle-system.js';
+import { alpha } from './theme.js';
 import type { ShooterKind, ShooterState } from './types.js';
 
 /** 每关需击毁的目标数（通关目标） */
@@ -257,7 +258,13 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     this.sfx?.('levelup');
     // 升关礼花：居中扩散 + 冲击环
     this.particles.burst(this.canvas.width / 2, this.canvas.height / 2, 'levelup');
-    this.particles.ring(this.canvas.width / 2, this.canvas.height / 2, '#22c55e', 20, 480);
+    this.particles.ring(
+      this.canvas.width / 2,
+      this.canvas.height / 2,
+      this.getPalette().success,
+      20,
+      480
+    );
 
     if (this.state.levelsCleared >= LEVELS_TO_WIN) {
       this.state.victory = true;
@@ -350,6 +357,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
 
   protected draw(): void {
     const ctx = this.ctx;
+    const pal = this.getPalette();
     const width = this.canvas.width;
     const height = this.canvas.height;
     const now = performance.now();
@@ -359,7 +367,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     ctx.clearRect(0, 0, width, height);
 
     // 背景网格
-    ctx.strokeStyle = '#1e293b';
+    ctx.strokeStyle = pal.grid;
     ctx.lineWidth = 1;
     for (let i = 0; i < width; i += 40) {
       ctx.beginPath();
@@ -376,7 +384,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
 
     // 连击指示
     if (this.state.combo > 1) {
-      ctx.fillStyle = '#fbbf24';
+      ctx.fillStyle = pal.warn;
       ctx.font = 'bold 22px sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
@@ -386,7 +394,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     // 击毁特效：扩散环
     for (const e of this.state.effects) {
       const t = (now - e.at) / EFFECT_TTL;
-      ctx.strokeStyle = `rgba(34, 197, 94, ${1 - t})`;
+      ctx.strokeStyle = alpha(pal.success, 1 - t);
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(e.x, e.y, 10 + t * 30, 0, Math.PI * 2);
@@ -413,14 +421,14 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
       const boxH = isBoss ? 48 : 36;
 
       // 机体
-      ctx.fillStyle = isBoss ? 'rgba(244,63,94,0.25)' : 'rgba(56,189,248,0.15)';
+      ctx.fillStyle = isBoss ? alpha(pal.danger, 0.25) : alpha(pal.accent, 0.15);
       ctx.strokeStyle = errorLocked
-        ? '#f43f5e'
+        ? pal.danger
         : isLocked
-          ? '#fbbf24'
+          ? pal.warn
           : isBoss
-            ? '#f43f5e'
-            : '#38bdf8';
+            ? pal.danger
+            : pal.accent;
       ctx.lineWidth = isLocked || isBoss ? 2 : 1;
       ctx.beginPath();
       ctx.rect(t.x - boxW / 2, t.y - boxH / 2, boxW, boxH);
@@ -432,22 +440,22 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
       const untyped = t.text.slice(t.typedIndex);
       const typedWidth = ctx.measureText(typed).width;
       const startX = t.x - fullWidth / 2;
-      ctx.fillStyle = errorLocked ? '#f43f5e' : '#22c55e';
+      ctx.fillStyle = errorLocked ? pal.danger : pal.success;
       ctx.fillText(typed, startX + typedWidth / 2, t.y);
-      ctx.fillStyle = errorLocked ? '#fca5a5' : '#f8fafc';
+      ctx.fillStyle = errorLocked ? pal.dangerSoft : pal.ink;
       ctx.fillText(untyped, startX + typedWidth + ctx.measureText(untyped).width / 2, t.y);
 
       // BOSS 血条
       if (isBoss) {
         const hpW = boxW * (t.hp / 3);
-        ctx.fillStyle = '#f43f5e';
+        ctx.fillStyle = pal.danger;
         ctx.fillRect(t.x - boxW / 2, t.y - boxH / 2 - 8, hpW, 4);
       }
     }
 
     // 错误字符标注
     if (errorActive && lastError) {
-      ctx.fillStyle = '#f43f5e';
+      ctx.fillStyle = pal.danger;
       ctx.font = 'bold 22px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -459,9 +467,9 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
 
     // 倒计时
     if (this.state.isRunning && this.state.countdown > 0) {
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillStyle = pal.scrim;
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = '#38bdf8';
+      ctx.fillStyle = pal.accent;
       ctx.font = 'bold 80px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(String(this.state.countdown), width / 2, height / 2);
@@ -469,9 +477,9 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
 
     // 暂停遮罩
     if (this.state.isPaused) {
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillStyle = pal.scrim;
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = '#fbbf24';
+      ctx.fillStyle = pal.warn;
       ctx.font = 'bold 48px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('PAUSED', width / 2, height / 2);
@@ -480,7 +488,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     // 通关横幅
     const flashAt = this.state.levelClearFlashAt;
     if (this.state.isRunning && flashAt !== undefined && now - flashAt < 1200) {
-      ctx.fillStyle = '#22c55e';
+      ctx.fillStyle = pal.success;
       ctx.font = 'bold 32px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -491,7 +499,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     if (this.state.victory || (!this.state.isRunning && this.state.lives <= 0)) {
       this.drawSettlement(
         this.state.victory ? '通关成功！' : 'GAME OVER',
-        this.state.victory ? '#22c55e' : '#f43f5e'
+        this.state.victory ? pal.success : pal.danger
       );
     }
   }
@@ -499,10 +507,11 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
   /** 结算页：最终得分 / 最高连击 / 准确率 / 通关关数 */
   private drawSettlement(title: string, color: string): void {
     const ctx = this.ctx;
+    const pal = this.getPalette();
     const width = this.canvas.width;
     const height = this.canvas.height;
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+    ctx.fillStyle = pal.scrimHeavy;
     ctx.fillRect(0, 0, width, height);
 
     ctx.textAlign = 'center';
@@ -514,7 +523,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     const total = this.state.correctChars + this.state.mistakes;
     const accuracy = total > 0 ? (this.state.correctChars / total) * 100 : 100;
 
-    ctx.fillStyle = '#f8fafc';
+    ctx.fillStyle = pal.ink;
     ctx.font = '24px sans-serif';
     ctx.fillText(`最终得分: ${this.state.score}`, width / 2, height / 2 - 10);
     ctx.fillText(`最高连击: x${this.state.maxCombo}`, width / 2, height / 2 + 25);
