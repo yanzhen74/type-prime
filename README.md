@@ -12,20 +12,47 @@
 
 ## 项目结构
 
+`src/` 按模块分五个子目录，每个源文件同目录并存同名 `.test.ts` 测试（Vitest + jsdom）：
+
 ```
 type-prime/
 ├── index.html          # 页面入口
-├── style.css           # 样式
+├── style.css           # 样式（CSS 变量 + 三主题）
 ├── package.json        # 依赖与脚本
 ├── tsconfig.json       # TypeScript 配置
+├── vitest.config.ts    # 测试配置（vitest.setup.ts 过滤 jsdom 噪声）
 ├── README.md           # 说明文档
 └── src/
-    ├── types.ts        # 类型定义
-    ├── storage.ts      # localStorage 用户数据管理
-    ├── keyboard.ts     # 虚拟键盘渲染与指法提示
-    ├── game.ts         # Canvas 游戏逻辑
-    └── main.ts         # 应用入口与事件绑定
+    ├── main.ts         # 应用入口：面板路由、快捷键与模块协调
+    ├── core/           # 公共底座
+    │   ├── types.ts        # 集中类型定义
+    │   ├── storage.ts      # localStorage 多用户与进度数据
+    │   ├── input.ts        # TypingEngine 统一输入（含 IME 兼容）
+    │   └── dialog.ts       # 页内模态对话框
+    ├── render/         # 表现层底座
+    │   ├── theme.ts        # 三主题 Canvas 版面色
+    │   ├── particle-system.ts  # 粒子池
+    │   └── layered-canvas.ts   # 分层渲染（静态层离屏缓存）
+    ├── train/          # 指法训练
+    │   ├── keyboard.ts     # DOM 虚拟键盘与指法提示
+    │   ├── keyboard-anim.ts    # 缩略键盘动画状态机
+    │   ├── train-engine.ts     # 分级练习引擎
+    │   ├── train-panel.ts      # 训练面板（键位/单词/文章/复习）
+    │   └── articles.ts       # 分级预装文章库
+    ├── games/          # 指法游戏
+    │   ├── game-engine.ts      # 游戏公共基类（循环/状态/输入）
+    │   ├── game.ts             # 单词掉落
+    │   ├── typing-shooter-game.ts  # 闯关射击
+    │   ├── zombie-typing-game.ts   # 僵尸大战
+    │   └── sound-manager.ts    # WebAudio 合成音效
+    └── vocab/          # 词库与记忆曲线
+        ├── vocabulary.ts   # VocabularyBank 词库管理
+        ├── review.ts       # SM-2 复习调度
+        ├── vocab-panel.ts  # 词库管理面板
+        └── assets/vocab/   # 预装词库数据（日常/编程/四六级/高频）
 ```
+
+编译输出 `dist/` 与 `src/` 同构；跨模块 import 使用 `../<模块>/x.js` 相对路径。
 
 ## 运行方式
 

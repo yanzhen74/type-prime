@@ -110,7 +110,7 @@
 
 ### 3.2 实现步骤
 
-1. 扩展类型定义（`src/types.ts`）
+1. 扩展类型定义（`src/core/types.ts`）
    - 新增 `WordEntry`、`VocabularyCategory`、`ReviewState`、`MasteryLevel` 等类型。
 
 2. 新建 `VocabularyBank`
@@ -297,7 +297,7 @@ type-prime/
 - 每个源文件同目录并存同名 `.test.ts`；新增模块按职责落入对应子目录，不再回平铺。
 - import 规则：同目录 `./x.js` 不变；跨目录 `../<模块>/x.js`；main.ts 用 `./<模块>/x.js`；assets 深两级用 `../../../core/types.js`。
 - 配置全部 glob 化（tsconfig include `src/**/*`、vitest exclude、eslint `src/`、prettier glob、build-release entry），子目录化无需改配置；后续新增子目录同样安全。
-- 本文档与 PROGRESS.md 早前条目中的 `src/xxx.ts` 平铺路径为历史口径，按上述映射读取。
+- 本文档与 PROGRESS.md、README.md 中的模块路径已全量对齐该结构。
 
 ---
 
@@ -333,11 +333,11 @@ type-prime/
 
 #### 1. 键盘渲染增强
 
-- 扩展 `src/keyboard.ts`：为键位添加 CSS 按下/弹起动画。
+- 扩展 `src/train/keyboard.ts`：为键位添加 CSS 按下/弹起动画。
 - 新增 `hintNext(code)` 方法，在练习中高亮“下一个应输入键”。
 - 保持现有 `highlight(code)` 与手指图高亮能力不变。
 
-#### 2. 练习引擎（`src/train-engine.ts`）
+#### 2. 练习引擎（`src/train/train-engine.ts`）
 
 - 生成随机键位序列、随机单词序列、文章文本序列。
 - 接收 `TypingEngine` 事件，逐字符比对标准文本与用户输入，记录正误。
@@ -397,15 +397,15 @@ type-prime/
 
 #### 1. 公共游戏框架
 
-- 新建 `src/game-engine.ts`：统一生命周期、状态管理、暂停/恢复、输入接入。
+- 新建 `src/games/game-engine.ts`：统一生命周期、状态管理、暂停/恢复、输入接入。
 
-#### 2. 闯关射击（`src/typing-shooter-game.ts`）
+#### 2. 闯关射击（`src/games/typing-shooter-game.ts`）
 
 - 目标生成：单字母 → 字母组合 → 单词 → 短语，难度递增。
 - 输入匹配：单字母即时击毁，单词/组合可逐字符锁定。
 - 连击、关卡推进、BOSS 关卡、结果页。
 
-#### 3. 僵尸大战（`src/zombie-typing-game.ts`）
+#### 3. 僵尸大战（`src/games/zombie-typing-game.ts`）
 
 - 僵尸对象、波次系统、基地血量。
 - 输入锁定与冲突处理。
@@ -414,8 +414,8 @@ type-prime/
 
 #### 4. 表现层打磨
 
-- 音效系统 `src/sound-manager.ts`（已实现）。
-- 粒子系统 `src/particle-system.ts`（已实现）。
+- 音效系统 `src/games/sound-manager.ts`（已实现）。
+- 粒子系统 `src/render/particle-system.ts`（已实现）。
 - 主题切换（已实现，见 §10.4.3）、键盘动画（已实现，见 §10.4.4）、Canvas 分层渲染（已实现，见 §10.4.5）。
 - 可选 WebGL/PixiJS 评估。
 
@@ -445,7 +445,7 @@ type-prime/
 ##### 4.3 主题切换实现口径（已交付）
 
 - 三主题：深空夜 night（默认，原深色版面色）/ 纸墨白 paper（浅色护眼）/ 磷光绿 phosphor（复古终端）。顶栏新增「主题」下拉 + 全局快捷键 `Ctrl+Shift+6` 循环（不用 Ctrl+Shift+T 是被浏览器「恢复关闭的标签页」占用）；F1 帮助「全局」组与页脚补对应行。
-- 双源配色、各自单一来源：DOM 侧全部走 `style.css` 的 `html[data-theme]` 变量块（含 `--board/--on-accent/--kbd-bg/--hand-left/--hand-right` 与半透明 tint 用的 `--*-rgb` 三元组）；Canvas 侧集中在 `src/theme.ts` 的纯数据表 `THEMES[name].canvas`（17 个 token：board/grid/ink/muted/accent/accentSoft/success/danger/dangerHot/dangerSoft/warn/onAccent/scrim/scrimHeavy/shadow/handLeft/handRight）。不在 TS 里重复维护 CSS 值，也不在 CSS 里写 Canvas 色。
+- 双源配色、各自单一来源：DOM 侧全部走 `style.css` 的 `html[data-theme]` 变量块（含 `--board/--on-accent/--kbd-bg/--hand-left/--hand-right` 与半透明 tint 用的 `--*-rgb` 三元组）；Canvas 侧集中在 `src/render/theme.ts` 的纯数据表 `THEMES[name].canvas`（17 个 token：board/grid/ink/muted/accent/accentSoft/success/danger/dangerHot/dangerSoft/warn/onAccent/scrim/scrimHeavy/shadow/handLeft/handRight）。不在 TS 里重复维护 CSS 值，也不在 CSS 里写 Canvas 色。
 - 世界色不随主题变：僵尸躯体配色、植物炮台、炮弹、粒子预设、手指身份色、BOSS 紫、冻结蓝属于「游戏世界标识色」，三主题下恒定（均为饱和中间调，深浅底都可读）；随主题变的只有版面色（底/网格/文字/遮罩/语义色/左右手底色）。
 - 取色不重建实例：`GameEngineOptions.getPalette?: () => CanvasPalette`，基类持有 `protected readonly getPalette`（缺省夜），`main.ts` 注入 `ThemeManager.provider()`（活取色函数）；三个游戏与缩略键盘的绘制代码只从 token 取色，半透明处用 `alpha(hex, a)` 复用版面色。基类新增 `redraw()`、`TrainPanel.redraw()` 供主题变更时刷新静止画面（运行中由 rAF 自然覆盖）。
 - ThemeManager 职责：持有当前主题、读写 `typeprime_theme`（存储不可用时仅内存生效）、同步 `html[data-theme]`、`onChange` 广播（返回退订函数）、`cycle()` 按 THEME_ORDER 循环；`set` 同值早退避免重复通知与写存储。
@@ -457,7 +457,7 @@ type-prime/
 
 ##### 4.4 键盘动画实现口径（已交付）
 
-- 动画与绘制分离：`src/keyboard-anim.ts` 的 `KeyboardAnimator` 是纯数值状态机（press/error/hint/layer/ripple 五通道 + idle 呼吸），只暴露 `update(now)` / `visual(code)` / `active`；`MiniKeyboardCanvas`（train-panel.ts）负责 rAF 取数绘制。动画不持有 ctx、绘制不持有计时，二者可独立单测。
+- 动画与绘制分离：`src/train/keyboard-anim.ts` 的 `KeyboardAnimator` 是纯数值状态机（press/error/hint/layer/ripple 五通道 + idle 呼吸），只暴露 `update(now)` / `visual(code)` / `active`；`MiniKeyboardCanvas`（train-panel.ts）负责 rAF 取数绘制。动画不持有 ctx、绘制不持有计时，二者可独立单测。
 - 帧内计时不变量：与粒子系统同口径，`update(now)` 只按调用方注入的时间戳推进，首帧 dt 哨兵 `-1`（dt=0），单帧步长上限 `MAX_KEY_ANIM_STEP = 50ms` 吸收切标签页后的巨大 dt；内部绝不取 `performance.now()`。`active` 为假（无通道且无需呼吸）时 rAF 循环自然停止，不空转。
 - 参数纯数据表 `KEY_ANIM`：press 55/200ms + squash 0.06 + travel 3.5（easeOutBack 回弹过冲是设计特性，端点显式归 0/1）；error 340ms、40ms 起振、amp 3.6、3 周期横向抖动；hint 1500ms 呼吸 lift 1.4 / glow 5–14 / fill 0.26–0.44；layer 260/180ms + stagger 22 逐键渐入（键位练习层级高亮）；ripple 420ms / spread 0.55 / alpha 0.5，池上限 `MAX_KEY_RIPPLES = 12` 超出丢最老。
 - 键座/键帽双层绘制：先画不随动画变换的键座，再对键帽以中心为原点施加 `translate(shake, dy)` / `scale` 后叠半透明状态色与描边（强度由通道给出，过渡连续）；实色强调/危险底（press>0.5 或 error>0.5）字色切 `pal.onAccent`，修复 paper 主题深红/深青底上深字不可读。
@@ -583,7 +583,7 @@ type-prime/
 
 ### 11.2 词库文件格式
 
-词库以 JSON 文件形式存放在 `src/assets/vocab/` 目录，便于版本管理与按需加载。
+词库以 JSON 文件形式存放在 `src/vocab/assets/vocab/` 目录，便于版本管理与按需加载。
 
 #### 11.2.1 单条单词结构
 
@@ -669,10 +669,10 @@ type-prime/
 - **测试与质量**：Vitest + jsdom，ESLint + TypeScript-ESLint + Prettier，GitHub Actions CI 执行格式化检查、Lint、测试、构建。
 - **数据持久化**：`localStorage`，当前仅用于 `UserStorage` 的用户与排行榜数据。
 - **目录与模块划分**：
-  - `src/types.ts`：集中类型定义。
-  - `src/storage.ts`：`UserStorage` 类。
-  - `src/keyboard.ts`：`KeyboardRenderer` 负责虚拟键盘与手指图渲染。
-  - `src/game.ts`：`FallingWordGame` 负责 Canvas 单词掉落游戏。
+  - `src/core/types.ts`：集中类型定义。
+  - `src/core/storage.ts`：`UserStorage` 类。
+  - `src/train/keyboard.ts`：`KeyboardRenderer` 负责虚拟键盘与手指图渲染。
+  - `src/games/game.ts`：`FallingWordGame` 负责 Canvas 单词掉落游戏。
   - `src/main.ts`：`App` 类负责 DOM 初始化、标签切换、事件绑定与模块协调。
   - `index.html` 与 `style.css`：页面结构与深色主题样式。
 - **核心交互链**：`keydown`/`input` → `App` → `KeyboardRenderer` / `FallingWordGame` → `UserStorage`。
@@ -688,7 +688,7 @@ type-prime/
    - 新增 `VocabularyBank`、`ReviewScheduler`、`UserProgress` 作为独立服务，游戏与训练模块通过依赖注入使用。
 
 3. **沿用现有类型与存储约定**
-   - 继续在 `src/types.ts` 中集中新增类型。
+   - 继续在 `src/core/types.ts` 中集中新增类型。
    - `localStorage` key 采用 `typeprime_` 前缀，避免与现有 `typeprime_users` 冲突。
    - 数据结构支持版本号，未来升级可自动迁移。
 
@@ -712,26 +712,26 @@ type-prime/
 
 ### 块一：指法训练与输入练习
 
-- 扩展 `src/keyboard.ts`：新增 `hintNext(code)` 与按键动画，不改动现有 `highlight(code)` 行为。
-- 新增 `src/train-engine.ts`：生成练习序列并校验输入。
+- 扩展 `src/train/keyboard.ts`：新增 `hintNext(code)` 与按键动画，不改动现有 `highlight(code)` 行为。
+- 新增 `src/train/train-engine.ts`：生成练习序列并校验输入。
 - 扩展 `index.html`：在“指法训练”面板内增加子标签页（自由/键位/文章）。
 - 扩展 `src/main.ts`：在训练面板激活时，将 `TypingEngine` 事件路由到 `TrainEngine`。
 
 ### 块二：单词记忆与词库管理
 
-- 完善 `src/vocabulary.ts` 与词库管理 UI。
-- 在 `src/review.ts` 中完善 `getDueReviews()` 与 `recordResult()`。
+- 完善 `src/vocab/vocabulary.ts` 与词库管理 UI。
+- 在 `src/vocab/review.ts` 中完善 `getDueReviews()` 与 `recordResult()`。
 - 扩展 `src/main.ts` 与 `index.html`：新增“今日复习”入口。
 - 让 `TrainEngine` 支持从 `ReviewScheduler` 取词生成复习练习。
 
 ### 块三：指法游戏
 
-- 新增 `src/game-engine.ts`：提取通用游戏循环与状态管理。
-- 新增 `src/typing-shooter-game.ts`：继承 `GameEngine`，复用 `TypingEngine` 输入。
-- 新增 `src/zombie-typing-game.ts`：继承 `GameEngine`。
+- 新增 `src/games/game-engine.ts`：提取通用游戏循环与状态管理。
+- 新增 `src/games/typing-shooter-game.ts`：继承 `GameEngine`，复用 `TypingEngine` 输入。
+- 新增 `src/games/zombie-typing-game.ts`：继承 `GameEngine`。
 - 复用 `FallingWordGame` 的目标锁定与单词进度逻辑，迁移到基类或作为工具函数复用。
 - 扩展 `index.html` 与 `src/main.ts`：接入游戏选择。
-- 新增 `src/sound-manager.ts`、`src/particle-system.ts`，在 `GameEngine` 中预留钩子。
+- 新增 `src/games/sound-manager.ts`、`src/render/particle-system.ts`，在 `GameEngine` 中预留钩子。
 
 ### 13.1 关键里程碑
 
