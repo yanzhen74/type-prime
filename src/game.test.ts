@@ -19,6 +19,10 @@ class TestFalling extends FallingWordGame {
   tick(now: number): void {
     this.update(now);
   }
+  /** 粒子池大小：纯表现层，不属于 state */
+  get particleCount(): number {
+    return this.particles.count;
+  }
 }
 
 describe('游戏难度纯函数', () => {
@@ -188,5 +192,69 @@ describe('FallingWordGame 音效钩子（onSfx）', () => {
     expect(played.filter((n) => n === 'hurt')).toHaveLength(5);
     expect(played).toContain('gameover');
     expect(game.isRunning()).toBe(false);
+  });
+});
+
+describe('FallingWordGame 粒子特效', () => {
+  beforeEach(() => {
+    const canvas = document.createElement('canvas');
+    canvas.id = 'particle-canvas';
+    canvas.width = 800;
+    canvas.height = 500;
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => createMockCtx();
+    document.body.appendChild(canvas);
+  });
+
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  function makeParticleGame() {
+    const game = new TestFalling(
+      'particle-canvas',
+      () => {},
+      () => {}
+    );
+    game.forceRunning();
+    return game;
+  }
+
+  it('击落单词喷出爆散粒子', () => {
+    const game = makeParticleGame();
+    game.tick(5000); // 超过出词间隔 → 生成一个单词
+    const word = game.s.words[game.s.words.length - 1];
+
+    for (const ch of word.text) game.handleChar(ch);
+
+    expect(game.s.words).not.toContain(word);
+    expect(game.particleCount).toBeGreaterThan(0);
+  });
+
+  it('单词触底喷出受伤粒子', () => {
+    const game = makeParticleGame();
+    game.tick(5000);
+    const words = game.s.words;
+    words[words.length - 1].speed = 1000;
+
+    game.tick(5001);
+
+    expect(game.s.lives).toBeLessThan(5);
+    expect(game.particleCount).toBeGreaterThan(0);
+  });
+
+  it('粒子随帧消散，reset 后清空', () => {
+    const game = makeParticleGame();
+    game.tick(5000);
+    const word = game.s.words[game.s.words.length - 1];
+    for (const ch of word.text) game.handleChar(ch);
+    const spawned = game.particleCount;
+    expect(spawned).toBeGreaterThan(0);
+
+    // 640ms 内不会触发新出词，也不会触底，因此粒子只减不增
+    for (let i = 1; i <= 40; i++) game.tick(5000 + i * 16);
+    expect(game.particleCount).toBeLessThan(spawned);
+
+    game.reset();
+    expect(game.particleCount).toBe(0);
   });
 });

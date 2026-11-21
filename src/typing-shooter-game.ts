@@ -1,4 +1,5 @@
 import { GameEngine, lengthSpeedFactor, type GameEngineOptions } from './game-engine.js';
+import { ParticleSystem } from './particle-system.js';
 import type { ShooterKind, ShooterState } from './types.js';
 
 /** 每关需击毁的目标数（通关目标） */
@@ -84,6 +85,10 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
   private readonly sfx?: (name: ShooterSfx) => void;
   private lastSpawn = 0;
   private nextId = 1;
+  /** 粒子池：纯表现层，不进 state 以免污染 onUpdate 与既有测试 */
+  protected readonly particles: ParticleSystem;
+  /** 上一帧时间戳（-1 为未初始化哨兵，避免与合成时间 tick(0) 冲突） */
+  private lastUpdateAt = -1;
 
   constructor(
     canvasId: string,
@@ -94,6 +99,8 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     super(canvasId, { onUpdate, onGameOver }, options);
     this.rng = options.rng ?? Math.random;
     this.sfx = options.onSfx;
+    // 粒子共用游戏的确定性随机源，单测里数量可预测
+    this.particles = new ParticleSystem({ rng: () => this.rng() });
   }
 
   protected createState(): ShooterState {
@@ -115,6 +122,14 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
 
   protected onResume(): void {
     this.lastSpawn = performance.now();
+    // 避免暂停/重新开始后的首个大 dt 让粒子瞬移
+    this.lastUpdateAt = -1;
+  }
+
+  /** 重置时清空粒子池 */
+  protected onReset(): void {
+    this.particles.clear();
+    this.lastUpdateAt = -1;
   }
 
   /** 锁定目标的下一个期望字符（供外层判定空格是字符还是提交） */
@@ -206,6 +221,8 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
       this.state.currentInput = '';
       this.state.score += 5;
       this.sfx?.('hit');
+      // 破甲火花：比击毁小一号，强调「打中但没打死」
+      this.particles.burst(target.x, target.y, 'hit', 0.8);
       this.emitUpdate();
       return;
     }
@@ -217,6 +234,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     this.state.maxCombo = Math.max(this.state.maxCombo, this.state.combo);
     this.state.effects.push({ x: target.x, y: target.y, at: performance.now() });
     this.sfx?.('destroy');
+    this.particles.burst(target.x, target.y, 'destroy', target.kind === 'boss' ? 1.8 : 1);
 
     this.state.targets.splice(index, 1);
     this.state.lockedTargetIndex = null;
@@ -237,6 +255,9 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     this.state.lives = Math.min(this.state.lives + 1, MAX_LIVES);
     this.state.levelClearFlashAt = performance.now();
     this.sfx?.('levelup');
+    // 升关礼花：居中扩散 + 冲击环
+    this.particles.burst(this.canvas.width / 2, this.canvas.height / 2, 'levelup');
+    this.particles.ring(this.canvas.width / 2, this.canvas.height / 2, '#22c55e', 20, 480);
 
     if (this.state.levelsCleared >= LEVELS_TO_WIN) {
       this.state.victory = true;
@@ -277,6 +298,12 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     });
     if (kind === 'boss') {
       this.sfx?.('boss');
+      // BOSS 登场：暗紫冲击波
+      const boss = this.state.targets[this.state.targets.length - 1];
+      if (boss) {
+        this.particles.burst(boss.x, boss.y + 20, 'boss');
+        this.particles.ring(boss.x, boss.y + 20, '#a855f7', 16, 520);
+      }
     }
   }
 
@@ -289,6 +316,11 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
 
     // 清理过期特效
     this.state.effects = this.state.effects.filter((e) => now - e.at < EFFECT_TTL);
+
+    // 粒子按注入的 dt 推进（帧内计时不变量：不取 performance.now）
+    const dt = this.lastUpdateAt < 0 ? 0 : now - this.lastUpdateAt;
+    this.lastUpdateAt = now;
+    this.particles.update(dt);
 
     for (let i = this.state.targets.length - 1; i >= 0; i--) {
       const t = this.state.targets[i];
@@ -306,6 +338,7 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
         this.state.combo = 0;
         this.state.lives -= 1;
         this.sfx?.('hurt');
+        this.particles.burst(t.x, this.canvas.height - 20, 'hurt');
         if (this.state.lives <= 0) {
           this.gameOver();
           return;
@@ -420,6 +453,9 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
       ctx.textBaseline = 'middle';
       ctx.fillText(`✗ ${lastError.char}`, width / 2, height - 40);
     }
+
+    // 粒子特效：叠加在目标之上、遮罩与横幅之下
+    this.particles.draw(ctx);
 
     // 倒计时
     if (this.state.isRunning && this.state.countdown > 0) {

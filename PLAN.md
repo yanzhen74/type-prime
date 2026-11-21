@@ -416,7 +416,7 @@ type-prime/
 #### 4. 表现层打磨
 
 - 音效系统 `src/sound-manager.ts`（已实现）。
-- 粒子系统 `src/particle-system.ts`（待实现）。
+- 粒子系统 `src/particle-system.ts`（已实现）。
 - 主题切换、键盘动画、Canvas 分层渲染。
 - 可选 WebGL/PixiJS 评估。
 
@@ -430,6 +430,18 @@ type-prime/
 - 开关与持久化：设置行新增「音效」下拉（on/off）+ `Ctrl+Shift+5`；该开关只切换播放器状态而**不重建游戏实例**（区别于其他设置项），避免调音量时打断当前局；值存入 `typeprime_game_settings.sound`，开启时顺手播一声反馈。
 - 测试与验证：`sound-manager.test.ts`（12 例：音色表合法性与覆盖、合成参数/包络/时长、关闭不创建上下文、节流、无 WebAudio 降级、suspended 自动 resume、音量夹取）+ 三个游戏各补 onSfx 事件断言；浏览器实测三模式发声、关闭后振荡器创建数为 0、刷新后设置保留、控制台零报错。
 - 未采取方案：外部音频文件/音频精灵（违反零资源口径、离线单文件体积膨胀）、第三方音效库（新增依赖）、在每个游戏内部直接建 AudioContext（三个模式会重复实现且无法统一静音）。
+
+##### 4.2 粒子系统实现口径（已交付）
+
+- 零资源零依赖：轻量粒子池 + 纯 Canvas 2D 绘制，四种形状（dot 碎块 / spark 拖尾线段 / smoke 扩散烟团 / ring 冲击环），不引入图片与第三方库，与音效系统同口径。
+- 纯数据预设表 `PARTICLE_PRESETS`：八类事件（hit/kill/destroy/splat/hurt/heal/levelup/boss）各定义数量/基准速度/散布/主方向扇形/寿命/尺寸/重力/阻尼/配色/形状；逐字符级的 hit 刻意小而短，事件级的 kill/levelup 更大更久；splat/heal 用非正重力让烟尘与光点上飘；hurt/heal 限定向上扇形。
+- 帧内计时不变量：`update(dt)` 只按调用方注入的 dt 推进，内部绝不取 performance.now()；单帧步长上限 `MAX_PARTICLE_STEP = 50ms` 吸收切标签页/rAF 停顿后的巨大 dt；池上限 `MAX_PARTICLES = 400`，超出丢弃最老粒子。
+- 不污染状态：粒子池是游戏实例的 protected 成员，不进入 state（避免 onUpdate 每帧携带大数组、避免既有测试快照失真）；测试经测试子类的 `particleCount` 与 `snapshot()` 观察轨迹。
+- 生命周期接线：基类 `reset()` 新增 `onReset()` 钩子（createState 之后、draw 之前调用），三个游戏覆写清池并重置 `lastUpdateAt = -1`；`onResume` 同样重置该哨兵，避免暂停恢复后首个大 dt 让粒子瞬移。
+- 事件点：单词掉落（击落 destroy、触底 hurt、升关 levelup+ring）；闯关射击（击毁 destroy 且 BOSS 放大 1.8、破甲 hit、BOSS 登场 boss+ring、触底 hurt、升关 levelup+ring）；僵尸大战（击杀 kill 按 `KILL_PARTICLE_SCALE` 体型放大、破甲 hit、实弹命中 hit、哑弹落地 splat、跳弹 hit 半号、触底 hurt、道具 heal、波次 levelup+ring、BOSS 登场 boss+ring）。
+- 取代与保留：装饰性 emoji 飘字（💥/✦/💨/🥀）改由粒子表现；带信息量的文案飘字（🔧 基地+1 / ❄ 冻结2s / +50 / ✗错字符）与闯关射击的扩散环特效保留。
+- 测试与验证：`particle-system.test.ts` 23 例（预设表合法性与覆盖、发射数量与 scale、rng 恒 0 时方向/颜色/寿命可预测、dt 推进与重力/阻尼、寿命到期移除、步长上限、池上限、clear、四种形状的绘制调用与 globalAlpha 淡出）；三个游戏各补粒子断言（击杀/命中/落地/触底/消散/reset 清池）；浏览器用「全项目仅粒子系统写 ctx.globalAlpha」这一事实做写入计数探针，实测三模式粒子渲染且装饰 emoji 归零、控制台零报错。
+- 未采取方案：图片/精灵图粒子（违反零资源口径）、第三方粒子库（新依赖）、把粒子放进 state（污染 onUpdate 与测试快照）、每帧新建粒子数组（GC 抖动）。
 
 #### 5. 测试（已覆盖）
 

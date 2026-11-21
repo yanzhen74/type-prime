@@ -28,6 +28,10 @@ class TestZombie extends ZombieTypingGame {
   tick(now: number): void {
     this.update(now);
   }
+  /** 粒子池大小：纯表现层，不属于 state */
+  get particleCount(): number {
+    return this.particles.count;
+  }
 }
 
 function createMockCtx(): CanvasRenderingContext2D {
@@ -419,6 +423,83 @@ describe('ZombieTypingGame', () => {
 
       expect(game.s.victory).toBe(true);
       expect(played).toContain('gameover');
+    });
+  });
+
+  describe('粒子特效', () => {
+    it('击杀喷出爆散粒子，装饰性 💥 飘字已由粒子取代', () => {
+      const game = makeGame();
+      game.forceRunning();
+      game.s.waveQueue = [];
+      game.spawn('normal');
+
+      typeFull(game, game.s.zombies[0].text);
+
+      expect(game.particleCount).toBeGreaterThan(0);
+      expect(game.s.effects.some((e) => e.text === '💥')).toBe(false);
+      // 道具文案属于信息量，保留
+      expect(game.s.effects.some((e) => e.text.startsWith('🔧'))).toBe(true);
+    });
+
+    it('实弹命中喷出火花，✦ 飘字不再产生', () => {
+      const game = makeGame();
+      game.forceRunning();
+      game.spawn('normal');
+      game.handleChar(game.s.zombies[0].text[0]);
+
+      game.tick(0);
+      game.tick(1000); // dt=1000 时炮弹一步即达
+
+      expect(game.particleCount).toBeGreaterThan(0);
+      expect(game.s.effects.some((e) => e.text === '✦')).toBe(false);
+    });
+
+    it('哑弹落地只留灰雾粒子，错字符飘字保留', () => {
+      const game = makeGame();
+      game.forceRunning();
+      game.spawn('normal');
+      const text = game.s.zombies[0].text;
+      game.handleChar(text[0]); // 先锁定，哑弹才会飞向目标
+
+      const wrong = text[0] === 'z' ? 'q' : 'z';
+      game.handleChar(wrong);
+      game.tick(0);
+      game.tick(1000); // 哑弹接触跳弹
+      expect(game.s.effects.some((e) => e.text === `✗${wrong}`)).toBe(true);
+      const afterRicochet = game.particleCount;
+      expect(afterRicochet).toBeGreaterThan(0);
+
+      game.tick(3000); // 超过哑弹 TTL → 落地灰雾
+      expect(game.particleCount).toBeGreaterThan(0);
+      expect(game.s.effects.some((e) => e.text === '💨' || e.text === '🥀')).toBe(false);
+    });
+
+    it('僵尸触底喷出受伤粒子', () => {
+      const game = makeGame();
+      game.forceRunning();
+      game.spawn('normal');
+      game.s.zombies[0].speed = 1000;
+
+      game.tick(0);
+
+      expect(game.s.lives).toBeLessThan(10);
+      expect(game.particleCount).toBeGreaterThan(0);
+    });
+
+    it('粒子随帧消散，reset 后清空', () => {
+      const game = makeGame();
+      game.forceRunning();
+      game.s.waveQueue = [];
+      game.spawn('normal');
+      typeFull(game, game.s.zombies[0].text);
+      const spawned = game.particleCount;
+      expect(spawned).toBeGreaterThan(0);
+
+      for (let i = 1; i <= 60; i++) game.tick(1000 + i * 16);
+      expect(game.particleCount).toBeLessThan(spawned);
+
+      game.reset();
+      expect(game.particleCount).toBe(0);
     });
   });
 });

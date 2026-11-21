@@ -1,4 +1,5 @@
 import { GameEngine, lengthSpeedFactor, type GameEngineOptions } from './game-engine.js';
+import { ParticleSystem } from './particle-system.js';
 import type { Zombie, ZombieKind, ZombieState } from './types.js';
 
 /** 坚守多少波后判定「防守成功」 */
@@ -26,6 +27,13 @@ const PROJECTILE_GRAVITY = 0.004;
 /** 各类型僵尸属性：生命 / 触底伤害 / 基础速度（BOSS 携带长句，降为 3 轮输入且速度取原值 3/4） */
 export const ZOMBIE_HP: Record<ZombieKind, number> = { normal: 1, fast: 1, tank: 3, boss: 3 };
 export const ZOMBIE_DAMAGE: Record<ZombieKind, number> = { normal: 1, fast: 1, tank: 2, boss: 3 };
+/** 击杀爆散的粒子规模：体型越大爆得越开 */
+const KILL_PARTICLE_SCALE: Record<ZombieKind, number> = {
+  normal: 1,
+  fast: 0.8,
+  tank: 1.3,
+  boss: 1.8,
+};
 const ZOMBIE_SPEED: Record<ZombieKind, number> = {
   normal: 0.5,
   fast: 0.9,
@@ -159,6 +167,8 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
   private lastUpdateAt = -1;
   /** 最近一次 update 的时间戳（供炮弹 TTL 等帧内计时使用） */
   private frameNow = 0;
+  /** 粒子池：纯表现层，不进 state 以免污染 onUpdate 与既有测试 */
+  protected readonly particles: ParticleSystem;
 
   constructor(
     canvasId: string,
@@ -170,6 +180,8 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     this.rng = options.rng ?? Math.random;
     this.wordProvider = options.wordProvider;
     this.sfx = options.onSfx;
+    // 粒子共用游戏的确定性随机源，单测里数量可预测
+    this.particles = new ParticleSystem({ rng: () => this.rng() });
   }
 
   protected createState(): ZombieState {
@@ -192,6 +204,12 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
   protected onResume(): void {
     this.lastSpawn = performance.now();
     // 避免暂停/重新开始后的首个大 dt 让炮弹瞬移
+    this.lastUpdateAt = -1;
+  }
+
+  /** 重置时清空粒子池 */
+  protected onReset(): void {
+    this.particles.clear();
     this.lastUpdateAt = -1;
   }
 
@@ -279,13 +297,16 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
       zombie.shownChars = 0;
       this.state.currentInput = '';
       this.state.score += 5;
+      // 破甲火花：比击杀小一号，强调「打中但没打死」
+      this.particles.burst(zombie.x, zombie.y, 'hit', 0.8);
       this.emitUpdate();
       return;
     }
 
     this.state.score += zombie.text.length * 10 + this.state.level * 5;
     this.state.kills += 1;
-    this.state.effects.push({ x: zombie.x, y: zombie.y, at: performance.now(), text: '💥' });
+    // 击杀爆散：原 💥 emoji 飘字改由粒子表现，按体型放大规模
+    this.particles.burst(zombie.x, zombie.y, 'kill', KILL_PARTICLE_SCALE[zombie.kind]);
     this.sfx?.('kill');
     this.rollItem(zombie.x, zombie.y);
 
@@ -311,6 +332,8 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     const item = ITEMS[Math.floor(this.rng() * ITEMS.length)];
     this.state.items += 1;
     this.sfx?.('heal');
+    // 道具光点上飘（文案飘字保留，粒子只负责装饰）
+    this.particles.burst(x, y, 'heal');
     if (item === 'heal') {
       this.state.lives = Math.min(this.state.lives + 1, MAX_BASE_HP);
       this.state.effects.push({ x, y, at: performance.now(), text: '🔧 基地+1' });
@@ -335,6 +358,9 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     this.state.levelClearFlashAt = performance.now();
     this.state.waveQueue = waveComposition(this.state.level);
     this.sfx?.('levelup');
+    // 波次礼花：居中扩散 + 冲击环
+    this.particles.burst(this.canvas.width / 2, this.canvas.height / 2, 'levelup');
+    this.particles.ring(this.canvas.width / 2, this.canvas.height / 2, '#22c55e', 20, 480);
     this.emitUpdate();
   }
 
@@ -361,6 +387,12 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
       maxHp: ZOMBIE_HP[kind],
       shownChars: 0,
     });
+    if (kind === 'boss') {
+      // BOSS 登场：暗紫冲击波
+      const boss = this.state.zombies[this.state.zombies.length - 1];
+      this.particles.burst(boss.x, boss.y + 20, 'boss');
+      this.particles.ring(boss.x, boss.y + 20, '#a855f7', 16, 520);
+    }
   }
 
   protected update(now: number): void {
@@ -382,6 +414,8 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     const dt = this.lastUpdateAt < 0 ? 0 : now - this.lastUpdateAt;
     this.lastUpdateAt = now;
     this.updateProjectiles(now, dt);
+    // 粒子与炮弹同一 dt 推进（冻结期间仍然播放，不受僵尸移动暂停影响）
+    this.particles.update(dt);
 
     if (frozen) return;
 
@@ -403,6 +437,7 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
 
         this.state.lives -= ZOMBIE_DAMAGE[z.kind];
         this.sfx?.('hurt');
+        this.particles.burst(z.x, this.canvas.height - 30, 'hurt', z.kind === 'boss' ? 1.6 : 1);
         if (this.state.lives <= 0) {
           this.gameOver();
           return;
@@ -450,12 +485,8 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
         p.y += p.vy * dt;
         p.vy += PROJECTILE_GRAVITY * dt;
         if (p.y >= ground || now - p.at > PROJECTILE_TTL) {
-          this.state.effects.push({
-            x: p.x,
-            y: Math.min(p.y, ground),
-            at: now,
-            text: this.rng() < 0.15 ? '🥀' : '💨',
-          });
+          // 落地灰雾：原 💨/🥀 emoji 飘字改由粒子表现
+          this.particles.burst(p.x, Math.min(p.y, ground), 'splat');
           this.state.projectiles.splice(i, 1);
           this.sfx?.('splat');
         }
@@ -485,12 +516,15 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
           p.vy = -0.4;
           target.staggerUntil = now + 80;
           this.state.effects.push({ x: target.x, y: target.y, at: now, text: `✗${p.char ?? ''}` });
+          // 跳弹火花：保留错字符飘字，装饰部分交给粒子
+          this.particles.burst(target.x, target.y, 'hit', 0.5);
           this.sfx?.('miss-hit');
         } else {
           target.shownChars = Math.min(target.shownChars + 1, target.text.length);
           target.flashUntil = now + 120;
           target.staggerUntil = now + 60;
-          this.state.effects.push({ x: target.x, y: target.y, at: now, text: '✦' });
+          // 实弹命中火花：原 ✦ emoji 飘字改由粒子表现
+          this.particles.burst(target.x, target.y, 'hit');
           this.state.projectiles.splice(i, 1);
           this.sfx?.('hit');
         }
@@ -660,6 +694,9 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
 
     // 炮弹
     this.drawProjectiles();
+
+    // 粒子特效：叠加在僵尸与炮弹之上、HUD 与遮罩之下
+    this.particles.draw(ctx);
 
     // 错误字符标注
     if (errorActive && lastError) {

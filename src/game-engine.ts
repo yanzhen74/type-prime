@@ -135,8 +135,17 @@ export abstract class GameEngine<S extends GameBaseState = GameBaseState> {
     this.stopLoop();
     window.clearTimeout(this.countdownTimer);
     this.state = this.createState();
+    this.onReset();
     this.draw();
     this.emitUpdate();
+  }
+
+  /**
+   * 重置钩子：子类清理不属于 state 的表现层资源（如粒子池）。
+   * 在 createState() 之后、draw() 之前调用，确保重绘时不残留上一局特效。
+   */
+  protected onReset(): void {
+    // 默认无表现层资源需要清理
   }
 
   /** 接入统一输入引擎：将 char/backspace/submit/escape 事件路由到对应处理方法 */

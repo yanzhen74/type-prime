@@ -1,4 +1,5 @@
 import { GameEngine, lengthSpeedFactor } from './game-engine.js';
+import { ParticleSystem } from './particle-system.js';
 import type { GameState } from './types.js';
 
 const VOCABULARY = [
@@ -88,6 +89,10 @@ export class FallingWordGame extends GameEngine<GameState> {
   private wordProvider?: () => string;
   private lastSpawn = 0;
   private sfx?: (name: FallingSfx) => void;
+  /** 粒子池：纯表现层，不进 state 以免污染 onUpdate 与既有测试 */
+  protected readonly particles = new ParticleSystem();
+  /** 上一帧时间戳（-1 为未初始化哨兵，避免与合成时间 tick(0) 冲突） */
+  private lastUpdateAt = -1;
 
   constructor(
     canvasId: string,
@@ -129,6 +134,14 @@ export class FallingWordGame extends GameEngine<GameState> {
   /** 倒计时结束 / 恢复运行时重置出词计时，避免立即补刷单词 */
   protected onResume(): void {
     this.lastSpawn = performance.now();
+    // 避免暂停/重新开始后的首个大 dt 让粒子瞬移
+    this.lastUpdateAt = -1;
+  }
+
+  /** 重置时清空粒子池 */
+  protected onReset(): void {
+    this.particles.clear();
+    this.lastUpdateAt = -1;
   }
 
   /** 锁定单词的下一个期望字符（供外层判定空格是字符还是提交） */
@@ -218,6 +231,7 @@ export class FallingWordGame extends GameEngine<GameState> {
     const levelBonus = this.state.level * 5;
     this.state.score += baseScore + levelBonus;
     this.sfx?.('destroy');
+    this.particles.burst(word.x, word.y, 'destroy');
 
     this.state.words.splice(index, 1);
     this.state.lockedWordIndex = null;
@@ -240,6 +254,9 @@ export class FallingWordGame extends GameEngine<GameState> {
     this.state.lives = Math.min(this.state.lives + 1, MAX_LIVES);
     this.state.levelClearFlashAt = performance.now();
     this.sfx?.('levelup');
+    // 升关礼花：居中扩散 + 冲击环
+    this.particles.burst(this.canvas.width / 2, this.canvas.height / 2, 'levelup');
+    this.particles.ring(this.canvas.width / 2, this.canvas.height / 2, '#22c55e', 20, 480);
 
     if ((this.state.levelsCleared ?? 0) >= LEVELS_TO_WIN) {
       this.state.victory = true;
@@ -271,6 +288,11 @@ export class FallingWordGame extends GameEngine<GameState> {
       this.lastSpawn = now;
     }
 
+    // 粒子按注入的 dt 推进（帧内计时不变量：不取 performance.now）
+    const dt = this.lastUpdateAt < 0 ? 0 : now - this.lastUpdateAt;
+    this.lastUpdateAt = now;
+    this.particles.update(dt);
+
     for (let i = this.state.words.length - 1; i >= 0; i--) {
       const word = this.state.words[i];
       word.y += word.speed;
@@ -286,6 +308,7 @@ export class FallingWordGame extends GameEngine<GameState> {
 
         this.state.lives -= 1;
         this.sfx?.('hurt');
+        this.particles.burst(word.x, this.canvas.height - 20, 'hurt');
         if (this.state.lives <= 0) {
           this.gameOver();
           return;
@@ -395,6 +418,9 @@ export class FallingWordGame extends GameEngine<GameState> {
       ctx.textBaseline = 'middle';
       ctx.fillText(`✗ ${lastError.char}`, width / 2, height - 60);
     }
+
+    // 粒子特效：叠加在实体之上、遮罩与横幅之下
+    this.particles.draw(ctx);
 
     // 倒计时
     if (this.state.isRunning && this.state.countdown > 0) {

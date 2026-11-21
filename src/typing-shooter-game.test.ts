@@ -26,6 +26,10 @@ class TestShooter extends TypingShooterGame {
   tick(now: number): void {
     this.update(now);
   }
+  /** 粒子池大小：纯表现层，不属于 state */
+  get particleCount(): number {
+    return this.particles.count;
+  }
 }
 
 function createMockCtx(): CanvasRenderingContext2D {
@@ -277,6 +281,61 @@ describe('TypingShooterGame', () => {
       expect(played.filter((n) => n === 'hurt')).toHaveLength(5);
       expect(played).toContain('gameover');
       expect(game.isRunning()).toBe(false);
+    });
+  });
+
+  describe('粒子特效', () => {
+    function makeParticleGame(startingLevel = 2) {
+      const game = new TestShooter(
+        'test-canvas',
+        () => {},
+        () => {},
+        {
+          rng: zeroRng,
+          startingLevel,
+        }
+      );
+      game.forceRunning();
+      return game;
+    }
+
+    it('击毁目标喷出爆散粒子，扩散环特效仍然保留', () => {
+      const game = makeParticleGame();
+      game.spawn();
+      typeFull(game, game.s.targets[0].text);
+      expect(game.particleCount).toBeGreaterThan(0);
+      expect(game.s.effects).toHaveLength(1);
+    });
+
+    it('BOSS 登场与破甲各自喷出粒子', () => {
+      const game = makeParticleGame(4);
+      game.s.targetsClearedThisLevel = 7; // 本关最后一个目标 → BOSS
+      game.spawn();
+      const afterSpawn = game.particleCount;
+      expect(afterSpawn).toBeGreaterThan(0);
+
+      const boss = game.s.targets[game.s.targets.length - 1];
+      typeFull(game, boss.text); // 破甲 hp 3→2
+      expect(game.particleCount).toBeGreaterThan(afterSpawn);
+    });
+
+    it('目标触底喷出受伤粒子', () => {
+      const game = makeParticleGame();
+      game.spawn();
+      game.s.targets[game.s.targets.length - 1].speed = 1000;
+      game.tick(0);
+      expect(game.particleCount).toBeGreaterThan(0);
+    });
+
+    it('粒子随帧消散，reset 后清空', () => {
+      const game = makeParticleGame();
+      game.spawn();
+      typeFull(game, game.s.targets[0].text);
+      const spawned = game.particleCount;
+      for (let i = 1; i <= 60; i++) game.tick(i * 16);
+      expect(game.particleCount).toBeLessThan(spawned);
+      game.reset();
+      expect(game.particleCount).toBe(0);
     });
   });
 });
