@@ -1,4 +1,10 @@
-import type { CharResult, DrillPhase, TrainProgress, TrainingLevel, TypingEvent } from './types.js';
+import type {
+  CharResult,
+  DrillPhase,
+  TrainProgress,
+  TrainingLevel,
+  TypingEvent,
+} from '../core/types.js';
 
 /** 键位专项训练序列的默认长度（不含空格） */
 const DEFAULT_DRILL_LENGTH = 40;

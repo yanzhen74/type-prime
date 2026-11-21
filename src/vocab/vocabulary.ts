@@ -1,4 +1,4 @@
-import type { WordEntry, VocabularyCategory, Difficulty } from './types.js';
+import type { WordEntry, VocabularyCategory, Difficulty } from '../core/types.js';
 import { DEFAULT_CATEGORIES, DEFAULT_WORDS } from './assets/vocab/default-words.js';
 
 const STORAGE_KEY = 'typeprime_vocabulary';

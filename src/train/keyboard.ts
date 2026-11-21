@@ -1,4 +1,4 @@
-import type { Finger } from './types.js';
+import type { Finger } from '../core/types.js';
 
 type Hand = 'left' | 'right';
 

@@ -1,4 +1,4 @@
-import type { Difficulty, WordEntry } from '../../types.js';
+import type { Difficulty, WordEntry } from '../../../core/types.js';
 
 /**
  * 词表构建工具。

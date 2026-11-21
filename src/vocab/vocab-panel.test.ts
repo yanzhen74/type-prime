@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { VocabPanel } from './vocab-panel.js';
 import { VocabularyBank } from './vocabulary.js';
 import { ReviewScheduler } from './review.js';
-import { UserProgress } from './storage.js';
+import { UserProgress } from '../core/storage.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

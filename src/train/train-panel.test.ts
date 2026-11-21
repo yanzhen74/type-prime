@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TrainPanel } from './train-panel.js';
-import { THEMES, alpha, type CanvasPalette } from './theme.js';
-import type { TypingEngine } from './input.js';
-import type { VocabularyBank, WordQueryOptions } from './vocabulary.js';
-import type { UserProgress } from './storage.js';
-import type { TypingEvent, WordEntry } from './types.js';
+import { THEMES, alpha, type CanvasPalette } from '../render/theme.js';
+import type { TypingEngine } from '../core/input.js';
+import type { VocabularyBank, WordQueryOptions } from '../vocab/vocabulary.js';
+import type { UserProgress } from '../core/storage.js';
+import type { TypingEvent, WordEntry } from '../core/types.js';
 
 /**
  * 构建 TrainPanel 所需的最小 DOM fixture（含 cacheDom 中 requireEl 的全部必需元素）。
@@ -68,6 +68,8 @@ interface CanvasProbe {
   colors: string[];
   translates: [number, number][];
   scales: [number, number][];
+  /** 静态层 blit 次数（分层渲染命中观察口） */
+  blits: number;
 }
 
 /**
@@ -79,8 +81,12 @@ function mountKeyboardCanvas(): CanvasProbe {
   const colors: string[] = [];
   const translates: [number, number][] = [];
   const scales: [number, number][] = [];
+  let blits = 0;
   const base = {
     measureText: () => ({ width: 10 }),
+    drawImage: () => {
+      blits += 1;
+    },
     translate: (x: number, y: number) => {
       translates.push([x, y]);
     },
@@ -108,7 +114,14 @@ function mountKeyboardCanvas(): CanvasProbe {
   canvas.id = 'keyboard-ref';
   (canvas as unknown as { getContext: () => unknown }).getContext = () => ctx;
   document.body.appendChild(canvas);
-  return { colors, translates, scales };
+  return {
+    colors,
+    translates,
+    scales,
+    get blits() {
+      return blits;
+    },
+  };
 }
 
 /** 词库桩：单词模式返回固定两词，目标文本恒为 "ab cd"，便于断言 */
@@ -172,6 +185,83 @@ function setup(): Harness {
 }
 
 const char = (c: string): TypingEvent => ({ type: 'char', char: c });
+
+/**
+ * 分层渲染接线：接管 document.createElement('canvas') 让离屏画布拿到真实记录 ctx，
+ * 从而在 jsdom 里也能走离屏缓存路径（默认 jsdom 离屏不可用会降级直绘）。
+ * 本 describe 必须最先跑：离屏支持探针是模块级一次性缓存。
+ */
+describe('TrainPanel 缩略键盘分层渲染', () => {
+  let offFills = 0;
+  let createSpy: ReturnType<typeof vi.spyOn> | null = null;
+
+  beforeEach(() => {
+    localStorage.clear();
+    mountFixture();
+    offFills = 0;
+    const offBase = {
+      fillRect: () => {
+        offFills += 1;
+      },
+      fill: () => {
+        offFills += 1;
+      },
+      measureText: () => ({ width: 10 }),
+    };
+    const offCtx = new Proxy(offBase, {
+      get(target, prop) {
+        if (prop in target) return (target as Record<string | symbol, unknown>)[prop];
+        return () => undefined;
+      },
+      set() {
+        return true;
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    const realCreate = document.createElement.bind(document);
+    createSpy = vi.spyOn(document, 'createElement');
+    createSpy.mockImplementation(((tag: string, options?: unknown) => {
+      const el = realCreate(tag as keyof HTMLElementTagNameMap, options as ElementCreationOptions);
+      if (tag === 'canvas') {
+        (el as unknown as { getContext: () => unknown }).getContext = () => offCtx;
+      }
+      return el;
+    }) as typeof document.createElement);
+  });
+
+  afterEach(() => {
+    createSpy?.mockRestore();
+    createSpy = null;
+    currentAnim?.panel.destroy();
+    currentAnim?.raf.restore();
+    currentAnim = null;
+    document.body.replaceChildren();
+  });
+
+  it('离屏可用：板面与键座只绘一次，呼吸动画帧只 blit 静态层', () => {
+    const a = mountAnimHarness();
+    const staticFills = offFills;
+    expect(staticFills).toBeGreaterThan(0);
+    const blitsBefore = a.probe.blits;
+
+    a.advance(240);
+
+    // 静态层（板面 1 次 fillRect + 每键座 1 次 fill）不再重绘
+    expect(offFills).toBe(staticFills);
+    expect(a.probe.blits).toBeGreaterThan(blitsBefore);
+  });
+
+  it('redraw 作废静态缓存：下一帧重绘离屏一次后继续命中', () => {
+    const a = mountAnimHarness();
+    const staticFills = offFills;
+
+    a.panel.redraw();
+    expect(offFills).toBe(staticFills * 2);
+
+    const afterRedraw = offFills;
+    a.advance(160);
+    expect(offFills).toBe(afterRedraw);
+  });
+});
 
 describe('TrainPanel 错误输入反馈渲染', () => {
   beforeEach(() => {

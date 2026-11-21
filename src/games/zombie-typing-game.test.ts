@@ -10,7 +10,7 @@ import {
   ZOMBIE_WORDS,
   type ZombieSfx,
 } from './zombie-typing-game.js';
-import type { ZombieKind, ZombieState } from './types.js';
+import type { ZombieKind, ZombieState } from '../core/types.js';
 import { lengthSpeedFactor } from './game-engine.js';
 
 /** 测试子类：暴露状态与受保护方法，避免依赖 rAF/假计时器 */

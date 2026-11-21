@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { VocabularyBank } from './vocabulary.js';
-import type { WordEntry, VocabularyCategory } from './types.js';
+import type { WordEntry, VocabularyCategory } from '../core/types.js';
 
 describe('VocabularyBank', () => {
   beforeEach(() => {

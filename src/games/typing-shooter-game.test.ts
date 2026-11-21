@@ -9,7 +9,7 @@ import {
   type ShooterSfx,
 } from './typing-shooter-game.js';
 import { lengthSpeedFactor } from './game-engine.js';
-import type { ShooterState } from './types.js';
+import type { ShooterState } from '../core/types.js';
 
 /** 测试子类：暴露状态与受保护方法，避免依赖 rAF/假计时器驱动循环 */
 class TestShooter extends TypingShooterGame {

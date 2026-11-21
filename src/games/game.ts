@@ -1,6 +1,7 @@
 import { GameEngine, lengthSpeedFactor, type GameEngineOptions } from './game-engine.js';
-import { ParticleSystem } from './particle-system.js';
-import type { GameState } from './types.js';
+import { ParticleSystem } from '../render/particle-system.js';
+import type { CanvasPalette } from '../render/theme.js';
+import type { GameState } from '../core/types.js';
 
 const VOCABULARY = [
   'apple',
@@ -323,22 +324,10 @@ export class FallingWordGame extends GameEngine<GameState> {
     }
   }
 
-  protected draw(): void {
-    const ctx = this.ctx;
-    const pal = this.getPalette();
+  /** 静态背景层：仅背景网格，每帧不变，交给分层底座缓存 */
+  private drawBackground(ctx: CanvasRenderingContext2D, pal: CanvasPalette): void {
     const width = this.canvas.width;
     const height = this.canvas.height;
-
-    // 错误反馈窗口：lastError 发生后 ~300ms 内做红色闪烁 + shake，超时自动恢复正常渲染
-    const now = performance.now();
-    const lastError = this.state.lastError;
-    const errorActive = lastError !== undefined && now - lastError.at < 300;
-    // 错误后的衰减进度（0→1），用于 shake 幅度与闪烁淡出
-    const errorT = errorActive && lastError ? (now - lastError.at) / 300 : 1;
-
-    ctx.clearRect(0, 0, width, height);
-
-    // 背景网格
     ctx.strokeStyle = pal.grid;
     ctx.lineWidth = 1;
     for (let i = 0; i < width; i += 40) {
@@ -353,6 +342,22 @@ export class FallingWordGame extends GameEngine<GameState> {
       ctx.lineTo(width, i);
       ctx.stroke();
     }
+  }
+
+  protected draw(): void {
+    const pal = this.getPalette();
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+
+    // 错误反馈窗口：lastError 发生后 ~300ms 内做红色闪烁 + shake，超时自动恢复正常渲染
+    const now = performance.now();
+    const lastError = this.state.lastError;
+    const errorActive = lastError !== undefined && now - lastError.at < 300;
+    // 错误后的衰减进度（0→1），用于 shake 幅度与闪烁淡出
+    const errorT = errorActive && lastError ? (now - lastError.at) / 300 : 1;
+
+    // 分层开帧：静态网格 blit 后按「单词 → 粒子 → 遮罩/HUD」有序绘制
+    const ctx = this.beginFrame((c) => this.drawBackground(c, pal));
 
     // 危险线（无锁定单词时，错误在此区域红色闪烁）
     const dangerFlash = errorActive && this.state.lockedWordIndex === null;

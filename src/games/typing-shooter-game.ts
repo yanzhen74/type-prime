@@ -1,7 +1,7 @@
 import { GameEngine, lengthSpeedFactor, type GameEngineOptions } from './game-engine.js';
-import { ParticleSystem } from './particle-system.js';
-import { alpha } from './theme.js';
-import type { ShooterKind, ShooterState } from './types.js';
+import { ParticleSystem } from '../render/particle-system.js';
+import { alpha, type CanvasPalette } from '../render/theme.js';
+import type { ShooterKind, ShooterState } from '../core/types.js';
 
 /** 每关需击毁的目标数（通关目标） */
 const TARGETS_PER_LEVEL = 8;
@@ -355,18 +355,10 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
     }
   }
 
-  protected draw(): void {
-    const ctx = this.ctx;
-    const pal = this.getPalette();
+  /** 静态背景层：仅背景网格，每帧不变，交给分层底座缓存 */
+  private drawBackground(ctx: CanvasRenderingContext2D, pal: CanvasPalette): void {
     const width = this.canvas.width;
     const height = this.canvas.height;
-    const now = performance.now();
-    const lastError = this.state.lastError;
-    const errorActive = lastError !== undefined && now - lastError.at < 300;
-
-    ctx.clearRect(0, 0, width, height);
-
-    // 背景网格
     ctx.strokeStyle = pal.grid;
     ctx.lineWidth = 1;
     for (let i = 0; i < width; i += 40) {
@@ -381,6 +373,18 @@ export class TypingShooterGame extends GameEngine<ShooterState> {
       ctx.lineTo(width, i);
       ctx.stroke();
     }
+  }
+
+  protected draw(): void {
+    const pal = this.getPalette();
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+    const now = performance.now();
+    const lastError = this.state.lastError;
+    const errorActive = lastError !== undefined && now - lastError.at < 300;
+
+    // 分层开帧：静态网格 blit 后按「连击/特效 → 目标 → 粒子 → 遮罩/HUD」有序绘制
+    const ctx = this.beginFrame((c) => this.drawBackground(c, pal));
 
     // 连击指示
     if (this.state.combo > 1) {

@@ -1,7 +1,7 @@
 import { GameEngine, lengthSpeedFactor, type GameEngineOptions } from './game-engine.js';
-import { ParticleSystem } from './particle-system.js';
-import { alpha } from './theme.js';
-import type { Zombie, ZombieKind, ZombieState } from './types.js';
+import { ParticleSystem } from '../render/particle-system.js';
+import { alpha, type CanvasPalette } from '../render/theme.js';
+import type { Zombie, ZombieKind, ZombieState } from '../core/types.js';
 
 /** 坚守多少波后判定「防守成功」 */
 const WAVES_TO_WIN = 8;
@@ -613,19 +613,10 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
     }
   }
 
-  protected draw(): void {
-    const ctx = this.ctx;
-    const pal = this.getPalette();
+  /** 静态背景层：竖向网格 + 基地线（血量文字属动态 HUD，不在这里） */
+  private drawBackground(ctx: CanvasRenderingContext2D, pal: CanvasPalette): void {
     const width = this.canvas.width;
     const height = this.canvas.height;
-    const now = performance.now();
-    const frozen = this.state.freezeUntil !== undefined && now < this.state.freezeUntil;
-    const lastError = this.state.lastError;
-    const errorActive = lastError !== undefined && now - lastError.at < 300;
-
-    ctx.clearRect(0, 0, width, height);
-
-    // 背景网格
     ctx.strokeStyle = pal.grid;
     ctx.lineWidth = 1;
     for (let i = 0; i < width; i += 40) {
@@ -634,14 +625,27 @@ export class ZombieTypingGame extends GameEngine<ZombieState> {
       ctx.lineTo(i, height);
       ctx.stroke();
     }
-
-    // 基地线
     ctx.strokeStyle = pal.success;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(0, height - 30);
     ctx.lineTo(width, height - 30);
     ctx.stroke();
+  }
+
+  protected draw(): void {
+    const pal = this.getPalette();
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+    const now = performance.now();
+    const frozen = this.state.freezeUntil !== undefined && now < this.state.freezeUntil;
+    const lastError = this.state.lastError;
+    const errorActive = lastError !== undefined && now - lastError.at < 300;
+
+    // 分层开帧：静态网格/基地线 blit 后按「炮台/提示 → 僵尸 → 炮弹 → 粒子 → HUD」有序绘制
+    const ctx = this.beginFrame((c) => this.drawBackground(c, pal));
+
+    // 基地血量文字（动态 HUD）
     ctx.fillStyle = pal.success;
     ctx.font = '16px sans-serif';
     ctx.textAlign = 'left';

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GameEngine, lengthSpeedFactor } from './game-engine.js';
-import type { TypingEngine } from './input.js';
-import type { GameBaseState, TypingEvent } from './types.js';
+import type { TypingEngine } from '../core/input.js';
+import type { GameBaseState, TypingEvent } from '../core/types.js';
 
 interface TestState extends GameBaseState {
   hits: number;

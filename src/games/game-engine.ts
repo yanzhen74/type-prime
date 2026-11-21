@@ -1,6 +1,7 @@
-import type { TypingEngine } from './input.js';
-import { THEMES, type CanvasPalette } from './theme.js';
-import type { GameBaseState } from './types.js';
+import type { TypingEngine } from '../core/input.js';
+import { LayeredCanvas, type StaticPainter } from '../render/layered-canvas.js';
+import { THEMES, type CanvasPalette } from '../render/theme.js';
+import type { GameBaseState } from '../core/types.js';
 
 /** 游戏状态变更与结束回调 */
 export interface GameCallbacks<S> {
@@ -47,6 +48,8 @@ export function lengthSpeedFactor(text: string): number {
 export abstract class GameEngine<S extends GameBaseState = GameBaseState> {
   protected readonly canvas: HTMLCanvasElement;
   protected readonly ctx: CanvasRenderingContext2D;
+  /** 分层渲染底座：静态背景离屏缓存 + 主画布动态 passes */
+  protected readonly layers: LayeredCanvas;
   protected state: S;
   protected animationId = 0;
   protected countdownTimer = 0;
@@ -70,6 +73,7 @@ export abstract class GameEngine<S extends GameBaseState = GameBaseState> {
       throw new Error('Canvas 2D context not supported');
     }
     this.ctx = ctx;
+    this.layers = new LayeredCanvas(canvas);
     this.onUpdate = callbacks.onUpdate;
     this.onGameOver = callbacks.onGameOver;
     this.startingLevel = Math.max(1, options.startingLevel ?? 1);
@@ -80,7 +84,17 @@ export abstract class GameEngine<S extends GameBaseState = GameBaseState> {
 
   /** 主动重绘一帧：主题切换等外部变更时刷新静止画面（运行中由 rAF 自然覆盖） */
   redraw(): void {
+    this.layers.invalidate();
     this.draw();
+  }
+
+  /**
+   * 开一帧：清屏 → 静态背景层（缓存命中则 blit）→ 返回主 ctx。
+   * 子类在其后按「实体 → 粒子 → HUD/遮罩」顺序绘制动态 passes；
+   * paintStatic 只画每帧不变的内容（网格/固定线艺），版面色对象作缓存指纹。
+   */
+  protected beginFrame(paintStatic?: StaticPainter): CanvasRenderingContext2D {
+    return this.layers.beginFrame(this.getPalette(), paintStatic ?? ((): void => {}));
   }
 
   /** 构造完整初始状态（应基于 createBaseState() 扩展各自字段） */

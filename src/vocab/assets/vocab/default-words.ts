@@ -1,4 +1,4 @@
-import type { WordEntry, VocabularyCategory } from '../../types.js';
+import type { WordEntry, VocabularyCategory } from '../../../core/types.js';
 import { buildEntries } from './word-utils.js';
 import { FREQUENCY_WORDS } from './frequency-words.js';
 import { CET4_WORDS } from './cet4-words.js';

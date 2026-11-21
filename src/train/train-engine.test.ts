@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TrainEngine, TRAINING_LEVELS, DRILL_PHASES } from './train-engine.js';
-import type { CharResult, TrainProgress, TrainingLevel } from './types.js';
+import type { CharResult, TrainProgress, TrainingLevel } from '../core/types.js';
 
 describe('TrainEngine', () => {
   let engine: TrainEngine;

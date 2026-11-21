@@ -1,7 +1,7 @@
-import type { Difficulty, MasteryLevel, WordEntry, WordStats } from './types.js';
+import type { Difficulty, MasteryLevel, WordEntry, WordStats } from '../core/types.js';
 import type { VocabularyBank } from './vocabulary.js';
 import type { ReviewScheduler } from './review.js';
-import type { UserProgress } from './storage.js';
+import type { UserProgress } from '../core/storage.js';
 
 /**
  * 词库管理面板协调器。

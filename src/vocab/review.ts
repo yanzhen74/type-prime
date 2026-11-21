@@ -1,4 +1,4 @@
-import type { ReviewState } from './types.js';
+import type { ReviewState } from '../core/types.js';
 
 const STORAGE_KEY = 'typeprime_reviews';
 const DATA_VERSION = 1;

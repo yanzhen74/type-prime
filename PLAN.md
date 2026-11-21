@@ -212,7 +212,7 @@
 #### 技术要点
 
 - **单词前缀冲突**：多个僵尸显示相同首字母单词时，优先锁定最靠近基地的僵尸；输入错误切换锁定需避免频繁跳变。
-- **Canvas 渲染分层**：背景、僵尸/目标、粒子、UI 分层绘制，避免一帧内重复清除。
+- **Canvas 渲染分层**：背景、僵尸/目标、粒子、UI 分层绘制，避免一帧内重复清除（已实现，见 §10.4.5）。
 - **性能优化**：僵尸数量较多时，仅对屏幕内僵尸进行输入匹配；离屏僵尸可简化为位置更新。
 - **复用现有逻辑**：`FallingWordGame` 中的目标锁定、单词进度、得分升级逻辑可直接迁移到 `ZombieTypingGame`。
 
@@ -270,35 +270,34 @@ VocabularyBank <──> ReviewScheduler
 
 ---
 
-## 7. 预期新增/调整的文件结构
+## 7. 文件结构（目录模块化重构后现状）
+
+原平铺预期已被「src 分模块子目录重构」取代（git mv 保留历史，测试与源同目录并存）：
 
 ```
 type-prime/
-├── PLAN.md                       # 本文档
-├── README.md
+├── PLAN.md / PROGRESS.md / README.md
+├── index.html                  # 面板 DOM + 首屏防闪烁内联脚本（资源带 ?v=N）
+├── style.css                   # CSS 变量 + html[data-theme] 主题块
+├── vitest.config.ts            # jsdom 环境；vitest.setup.ts 过滤 jsdom 噪声
+├── scripts/build-release.mjs   # esbuild 单文件产物（entry 仍为 src/main.ts）
 ├── src/
-│   ├── types.ts                  # 扩展 WordEntry、Category、ReviewState 等类型
-│   ├── storage.ts                # 扩展为 UserProgress
-│   ├── storage.test.ts           # 补充用户进度/词库测试
-│   ├── keyboard.ts               # 重构键盘渲染与动画
-│   ├── input.ts                  # 新增 TypingEngine 统一输入
-│   ├── vocabulary.ts             # 新增 VocabularyBank
-│   ├── review.ts                 # 新增 ReviewScheduler
-│   ├── train-engine.ts           # 新增指法练习引擎
-│   ├── game-engine.ts            # 新增游戏公共基类
-│   ├── falling-word-game.ts      # 由原 game.ts 迁移/保留
-│   ├── typing-shooter-game.ts    # 新增
-│   ├── zombie-typing-game.ts     # 新增
-│   ├── particle-system.ts        # 新增
-│   ├── sound-manager.ts          # 新增
-│   ├── main.ts                   # 调整：按面板路由事件
-│   └── assets/
-│       ├── vocab/                # 词库 JSON
-│       └── sounds/               # 音效文件
-├── index.html                    # 增加训练/词库/游戏选择面板
-├── style.css                     # 增加动画与游戏面板样式
-└── tests/                        # 可选：补充集成测试
+│   ├── main.ts                 # 唯一根级源文件：入口协调/面板路由/快捷键
+│   ├── core/                   # 公共底座：types / storage / input / dialog
+│   ├── render/                 # 表现层底座：theme / particle-system / layered-canvas
+│   ├── train/                  # 块一：keyboard / keyboard-anim / train-engine / train-panel / articles
+│   ├── games/                  # 块三：game-engine / game / typing-shooter-game / zombie-typing-game / sound-manager
+│   └── vocab/                  # 块二：vocabulary / review / vocab-panel
+│       └── assets/vocab/       # 词库数据：default-words / cet4 / cet6 / frequency / word-utils
+└── dist/                       # tsc 输出（与 src 同构，rootDir src / outDir dist）
 ```
+
+重构口径：
+
+- 每个源文件同目录并存同名 `.test.ts`；新增模块按职责落入对应子目录，不再回平铺。
+- import 规则：同目录 `./x.js` 不变；跨目录 `../<模块>/x.js`；main.ts 用 `./<模块>/x.js`；assets 深两级用 `../../../core/types.js`。
+- 配置全部 glob 化（tsconfig include `src/**/*`、vitest exclude、eslint `src/`、prettier glob、build-release entry），子目录化无需改配置；后续新增子目录同样安全。
+- 本文档与 PROGRESS.md 早前条目中的 `src/xxx.ts` 平铺路径为历史口径，按上述映射读取。
 
 ---
 
@@ -417,7 +416,7 @@ type-prime/
 
 - 音效系统 `src/sound-manager.ts`（已实现）。
 - 粒子系统 `src/particle-system.ts`（已实现）。
-- 主题切换（已实现，见 §10.4.3）、键盘动画（已实现，见 §10.4.4）、Canvas 分层渲染。
+- 主题切换（已实现，见 §10.4.3）、键盘动画（已实现，见 §10.4.4）、Canvas 分层渲染（已实现，见 §10.4.5）。
 - 可选 WebGL/PixiJS 评估。
 
 ##### 4.1 音效系统实现口径（已交付）
@@ -468,6 +467,17 @@ type-prime/
 - 顺手修复两个既有缺陷：① 完成态 `hideCursor()` 摘除光标后回退再输入，`syncInputSpans()` 的 `insertBefore(span, cursorEl)` 抛 NotFoundError（浏览器曾累计 53 条）→ 改为光标父节点判断 + appendChild；② `renderModeHint()` 写纯文本节点而 `syncTargetSpans()` 只增删 span，空文章态加载文章后目标行残留「选择一篇预装文章…」提示文案 → `renderPreview()` 先移除非元素子节点。各补回归测试。
 - 测试与验证：`keyboard-anim.test.ts` 47 例（包络端点/过冲/抖动周期/呼吸/层级 stagger/ripple 池与淡出/步长上限/reduced 通道/active 起停）；`train-panel.test.ts` 新增 15 例动画（手动 rAF 队列精确控帧 + canvas Proxy 探针记录 fillStyle/translate/scale：按下收缩与过冲落定、错键平移偏离静止位、呼吸位移、层级 accent 描边 0→0.55 渐入、完成/切面板/destroy 停循环、开关与快捷键双向、aria/label/is-off/localStorage/手指静态同步、存储损坏回退、系统 reduce 默认关、显式存储优先、手指 tap/hint/miss 不牵连另一只手）+ 2 例回归。基线 17 文件 282 例全绿，`build:release` 182.2 KB。浏览器实测（须用 `Cache-Control: no-store` 服务器：dist 内部模块 import 无版本 query，启发式缓存会沿用旧模块）：按下帧键帽下沉且字可读、错键红底左偏、hint 青晕与拇指琥珀描边正确、切游戏面板 1.2s 绘制数 0 切回恢复、开关 off 绘制数 0 且手指静态、刷新持久化、完成结算与错键明细正常、控制台零报错。
 - 未采取方案：第三方动画库（新增依赖且与帧内计时口径冲突）、每帧新建对象/数组（GC 抖动）、只做 CSS 过渡（canvas 键帽无法用 CSS 变换，也无法与错键/层级/涟漪通道合成）、把动画计时写进绘制函数（不可单测）。
+
+##### 4.5 Canvas 分层渲染实现口径（已交付）
+
+- 单主画布 + 离屏静态缓存，而非多张 canvas DOM 堆叠：不动现有 DOM/CSS 与探针测试结构；静态层（网格/板面/键座/基地线）绘进离屏缓存，每帧主画布只 `clearRect` 一次 + `drawImage` blit 一次，再按「实体 → 粒子 → 遮罩/HUD」有序绘制动态 passes。
+- 底座 `src/render/layered-canvas.ts` 的 `LayeredCanvas`：`beginFrame(key, paintStatic)` 返回主 ctx；缓存失效三要素——`invalidate()` 显式作废、key 指纹变化（取版面色对象引用，换主题自动失效）、画布尺寸变化；`staticPaints`/`blits` 计数器作测试观察口；离屏不可用（jsdom/老环境）时降级为逐帧在主 ctx 直绘静态层，行为与分层前一致。
+- 基类接线：`GameEngine` 新增 `protected readonly layers`，`redraw()` 先 `layers.invalidate()` 再 `draw()`；新增 `protected beginFrame(paintStatic?)` 以 `this.getPalette()` 为缓存指纹。三个游戏各拆出 `drawBackground(ctx, pal)`（掉落/射击为双向网格，僵尸为竖向网格 + 基地线）；僵尸「基地血量」文字属动态 HUD 保留在主画布。
+- 缩略键盘接线：`MiniKeyboardCanvas` 板面底色 + 全部键座入静态缓存，涟漪 → 键帽每帧动态；`redraw()` 先 invalidate 保主题切换即时生效。
+- 测试：`layered-canvas.test.ts` 9 例（底座 7：首帧重绘/blit、多帧命中、指纹/尺寸/invalidate 失效、降级、无 ctx 抛错；基类接线 2：同主题多帧静态层只绘一次、换主题与 redraw 都重绘）；`train-panel.test.ts` +2 例（板面/键座只绘一次且呼吸帧只 blit、redraw 作废缓存）。注意：离屏支持探针是模块级一次性缓存，接管 `createElement` 的 describe 必须在该文件最先执行。
+- jsdom 噪声治理：`vitest.setup.ts` 在 worker 内过滤 `console.error` 的 `Not implemented:` 转发（VirtualConsole 实例含函数，无法经 environmentOptions 序列化进 forks worker；jsdom 29 的 API 为 `forwardTo(console, { jsdomErrors })`，旧 `sendTo` 已移除）。
+- 验证：基线 18 文件 293 例全绿，`build:release` 183.6 KB；浏览器 no-store 实测（探针计数 ctx 调用）：游戏每帧 drawImage 1 次（≈48/s），stroke 从分层前 40+/帧降至 1–3/帧；缩略键盘呼吸帧只 blit；三模式可玩、三主题切换即时重绘、切面板停循环/恢复、全局面板控制台零报错。
+- 未采取方案：多张 canvas DOM 堆叠（改 DOM/CSS、层级与焦点复杂化、探针测试重写）、每帧全量重绘静态层（分层前原状，网格描边浪费）、WebGL/PixiJS 迁移（留作独立评估项，不属本次范围）。
 
 #### 5. 测试（已覆盖）
 

@@ -12,9 +12,9 @@ import {
   type CanvasPalette,
   type ThemeName,
 } from './theme.js';
-import { FallingWordGame } from './game.js';
-import { TypingShooterGame } from './typing-shooter-game.js';
-import { ZombieTypingGame } from './zombie-typing-game.js';
+import { FallingWordGame } from '../games/game.js';
+import { TypingShooterGame } from '../games/typing-shooter-game.js';
+import { ZombieTypingGame } from '../games/zombie-typing-game.js';
 
 /** CanvasPalette 的全部 token（新增 token 时此表同步，保证三主题不漏配） */
 const PALETTE_TOKENS: (keyof CanvasPalette)[] = [

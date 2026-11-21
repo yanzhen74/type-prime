@@ -8,7 +8,7 @@ import type {
   TrainingSession,
   TypingEvent,
   WordEntry,
-} from './types.js';
+} from '../core/types.js';
 import { TrainEngine, TRAINING_LEVELS, DRILL_PHASES } from './train-engine.js';
 import {
   ARTICLE_DIFFICULTIES,
@@ -16,12 +16,13 @@ import {
   nextPresetArticle,
   randomPresetArticle,
 } from './articles.js';
-import type { TypingEngine } from './input.js';
+import type { TypingEngine } from '../core/input.js';
 import type { KeyboardRenderer } from './keyboard.js';
-import type { VocabularyBank } from './vocabulary.js';
-import type { UserProgress } from './storage.js';
-import type { ReviewScheduler } from './review.js';
-import { alpha, THEMES, type CanvasPalette } from './theme.js';
+import type { VocabularyBank } from '../vocab/vocabulary.js';
+import type { UserProgress } from '../core/storage.js';
+import type { ReviewScheduler } from '../vocab/review.js';
+import { alpha, THEMES, type CanvasPalette } from '../render/theme.js';
+import { LayeredCanvas } from '../render/layered-canvas.js';
 import { KEY_ANIM, KeyboardAnimator, clamp01, easeOutCubic } from './keyboard-anim.js';
 
 /** 单词练习每次取词数量 */
@@ -384,6 +385,8 @@ function roundRectPath(
  */
 class MiniKeyboardCanvas {
   private ctx: CanvasRenderingContext2D | null = null;
+  /** 分层底座：板面 + 键座静态缓存，键帽/涟漪每帧动态绘制 */
+  private layers: LayeredCanvas | null = null;
   /** 版面色取色函数（默认深空夜，TrainPanel 注入 ThemeManager.provider()） */
   private readonly getPalette: () => CanvasPalette;
   private readonly anim: KeyboardAnimator;
@@ -417,11 +420,13 @@ class MiniKeyboardCanvas {
     canvas.width = MINI_CANVAS_W;
     canvas.height = MINI_CANVAS_H;
     this.ctx = canvas.getContext('2d');
+    this.layers = this.ctx ? new LayeredCanvas(canvas) : null;
     this.draw();
   }
 
   /** 主题切换后重绘缩略键盘（不重建实例，保留 hint/layer/pressed 状态） */
   redraw(): void {
+    this.layers?.invalidate();
     this.refresh();
   }
 
@@ -517,23 +522,26 @@ class MiniKeyboardCanvas {
   }
 
   private draw(): void {
-    const ctx = this.ctx;
-    if (!ctx) {
+    const layers = this.layers;
+    if (!layers) {
       return;
     }
     const pal = this.getPalette();
-    ctx.clearRect(0, 0, MINI_CANVAS_W, MINI_CANVAS_H);
-    ctx.fillStyle = pal.board;
-    ctx.fillRect(0, 0, MINI_CANVAS_W, MINI_CANVAS_H);
-
-    // 键座先铺底：键帽下沉时露出的底座边缘让「按下」有物理深度
-    for (const item of MINI_LAYOUT) {
-      this.drawSocket(ctx, item, pal);
-    }
+    // 分层开帧：板面/键座 blit 后按「涟漪 → 键帽」有序绘制
+    const ctx = layers.beginFrame(pal, (c) => this.drawStatic(c, pal));
     // 涟漪画在键帽之下，只露出向外扩张的那一圈描边
     this.drawRipples(ctx, pal);
     for (const item of MINI_LAYOUT) {
       this.drawKey(ctx, item, pal);
+    }
+  }
+
+  /** 静态层：板面底色 + 全部键座（键帽下沉时露出的底座边缘），每帧不变 */
+  private drawStatic(ctx: CanvasRenderingContext2D, pal: CanvasPalette): void {
+    ctx.fillStyle = pal.board;
+    ctx.fillRect(0, 0, MINI_CANVAS_W, MINI_CANVAS_H);
+    for (const item of MINI_LAYOUT) {
+      this.drawSocket(ctx, item, pal);
     }
   }
 

@@ -5,7 +5,7 @@ import {
   FallingWordGame,
   type FallingSfx,
 } from './game.js';
-import type { GameState } from './types.js';
+import type { GameState } from '../core/types.js';
 
 /** 测试子类：暴露状态与受保护的 update，便于合成时间驱动出词/下落 */
 class TestFalling extends FallingWordGame {

@@ -1,17 +1,17 @@
-import { UserProgress } from './storage.js';
-import { KeyboardRenderer } from './keyboard.js';
-import { FallingWordGame, type GameOptions } from './game.js';
-import { TypingShooterGame } from './typing-shooter-game.js';
-import { ZombieTypingGame } from './zombie-typing-game.js';
-import { TypingEngine } from './input.js';
-import { TrainPanel } from './train-panel.js';
-import { VocabularyBank } from './vocabulary.js';
-import { ReviewScheduler } from './review.js';
-import { VocabPanel } from './vocab-panel.js';
-import { Dialog } from './dialog.js';
-import { SoundManager, type GameSfx } from './sound-manager.js';
-import { ThemeManager, isThemeName } from './theme.js';
-import type { GameBaseState } from './types.js';
+import { UserProgress } from './core/storage.js';
+import { KeyboardRenderer } from './train/keyboard.js';
+import { FallingWordGame, type GameOptions } from './games/game.js';
+import { TypingShooterGame } from './games/typing-shooter-game.js';
+import { ZombieTypingGame } from './games/zombie-typing-game.js';
+import { TypingEngine } from './core/input.js';
+import { TrainPanel } from './train/train-panel.js';
+import { VocabularyBank } from './vocab/vocabulary.js';
+import { ReviewScheduler } from './vocab/review.js';
+import { VocabPanel } from './vocab/vocab-panel.js';
+import { Dialog } from './core/dialog.js';
+import { SoundManager, type GameSfx } from './games/sound-manager.js';
+import { ThemeManager, isThemeName } from './render/theme.js';
+import type { GameBaseState } from './core/types.js';
 
 /** 游戏难度设置（持久化到 localStorage） */
 interface GameSettings {
