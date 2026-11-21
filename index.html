@@ -15,7 +15,7 @@
         /* 存储不可用时保留默认深空夜 */
       }
     </script>
-    <link rel="stylesheet" href="style.css?v=5" />
+    <link rel="stylesheet" href="style.css?v=7" />
   </head>
   <body>
     <div id="app">
@@ -172,6 +172,17 @@
 
             <!-- 右下角键盘参考区 -->
             <div class="train-keyboard" id="train-keyboard">
+              <div class="keyboard-ref-bar">
+                <span class="keyboard-ref-title">键盘参考</span>
+                <button
+                  id="train-motion-btn"
+                  class="btn keyboard-motion-btn"
+                  aria-pressed="true"
+                  title="开关键盘参考区动画（Ctrl+Shift+7）"
+                >
+                  <span id="train-motion-label">动画：开</span> <kbd>Ctrl+Shift+7</kbd>
+                </button>
+              </div>
               <canvas id="keyboard-ref"></canvas>
               <div class="mini-hands-diagram" id="mini-hands-diagram"></div>
               <div class="mini-finger-hint" id="mini-finger-hint"></div>
@@ -408,6 +419,10 @@
                   <td><kbd>Ctrl+←/→</kbd></td>
                   <td>切换练习阶段（训练面板）</td>
                 </tr>
+                <tr>
+                  <td><kbd>Ctrl+Shift+7</kbd></td>
+                  <td>键盘动画开 / 关（训练面板）</td>
+                </tr>
               </table>
             </div>
             <div class="help-section">
@@ -477,6 +492,6 @@
       </footer>
     </div>
 
-    <script type="module" src="dist/main.js?v=5"></script>
+    <script type="module" src="dist/main.js?v=7"></script>
   </body>
 </html>

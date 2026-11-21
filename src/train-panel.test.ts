@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TrainPanel } from './train-panel.js';
-import { THEMES, type CanvasPalette } from './theme.js';
+import { THEMES, alpha, type CanvasPalette } from './theme.js';
 import type { TypingEngine } from './input.js';
 import type { VocabularyBank, WordQueryOptions } from './vocabulary.js';
 import type { UserProgress } from './storage.js';
@@ -45,6 +45,12 @@ function mountFixture(): void {
       <button id="train-start-btn"></button>
       <button id="train-reset-btn"></button>
       <button id="train-next-btn" style="display:none"></button>
+      <div class="keyboard-ref-bar">
+        <span class="keyboard-ref-title">键盘参考</span>
+        <button id="train-motion-btn" class="btn keyboard-motion-btn" aria-pressed="true">
+          <span id="train-motion-label">动画：开</span>
+        </button>
+      </div>
       <div id="mini-hands-diagram"></div>
       <div id="mini-finger-hint"></div>
       <div id="train-result-modal" style="display:none">
@@ -55,6 +61,54 @@ function mountFixture(): void {
       </div>
     </section>
   `;
+}
+
+/** canvas 探针：记录一帧帧绘制写入的版面色与几何变换，用于断言主题与动画 */
+interface CanvasProbe {
+  colors: string[];
+  translates: [number, number][];
+  scales: [number, number][];
+}
+
+/**
+ * 补上 fixture 刻意省略的 #keyboard-ref canvas，并接管其 2D 上下文。
+ * jsdom 不实现 canvas 绘制，这里用 Proxy 把 fillStyle/strokeStyle/shadowColor
+ * 与 translate/scale 的写入录下来，动画与主题断言全部基于这些真实绘制调用。
+ */
+function mountKeyboardCanvas(): CanvasProbe {
+  const colors: string[] = [];
+  const translates: [number, number][] = [];
+  const scales: [number, number][] = [];
+  const base = {
+    measureText: () => ({ width: 10 }),
+    translate: (x: number, y: number) => {
+      translates.push([x, y]);
+    },
+    scale: (x: number, y: number) => {
+      scales.push([x, y]);
+    },
+  };
+  const ctx = new Proxy(base, {
+    get(target, prop) {
+      if (prop in target) return (target as Record<string | symbol, unknown>)[prop];
+      return () => undefined;
+    },
+    set(_target, prop, value) {
+      if (
+        (prop === 'fillStyle' || prop === 'strokeStyle' || prop === 'shadowColor') &&
+        typeof value === 'string'
+      ) {
+        colors.push(value);
+      }
+      return true;
+    },
+  }) as unknown as CanvasRenderingContext2D;
+
+  const canvas = document.createElement('canvas');
+  canvas.id = 'keyboard-ref';
+  (canvas as unknown as { getContext: () => unknown }).getContext = () => ctx;
+  document.body.appendChild(canvas);
+  return { colors, translates, scales };
 }
 
 /** 词库桩：单词模式返回固定两词，目标文本恒为 "ab cd"，便于断言 */
@@ -161,6 +215,43 @@ describe('TrainPanel 错误输入反馈渲染', () => {
     const input = h.inputSpans();
     expect(input[1].classList.contains('shake')).toBe(true);
     expect(input[0].classList.contains('shake')).toBe(false);
+  });
+
+  it('完成后回退再输入不抛异常（光标已摘除时输入行仍能追加 span）', () => {
+    const h = setup();
+    for (const c of ['a', 'b', ' ', 'c', 'd']) {
+      h.feed(char(c));
+    }
+    h.feed({ type: 'backspace' });
+    expect(() => h.feed(char('d'))).not.toThrow();
+
+    const input = h.inputSpans();
+    expect(input.length).toBe(5);
+    expect(input[4].textContent).toBe('d');
+    expect(input[4].classList.contains('correct')).toBe(true);
+  });
+
+  it('文章模式从空态加载文本后，目标行不残留模式提示文案', () => {
+    const typingStub = {
+      on: () => () => {},
+      focus: () => {},
+    } as unknown as TypingEngine;
+    new TrainPanel({
+      typingEngine: typingStub,
+      keyboard: null,
+      vocabulary: makeVocabStub(),
+      progress: makeProgressStub(),
+      currentUser: () => 'Tester',
+    });
+    (document.querySelector('[data-train-tab="article"]') as HTMLElement).click();
+    const target = document.getElementById('text-target') as HTMLElement;
+    expect(target.textContent).toContain('选择一篇预装文章');
+
+    const ta = document.getElementById('article-textarea') as HTMLTextAreaElement;
+    ta.value = 'ab cd';
+    (document.getElementById('article-load-btn') as HTMLElement).click();
+    // 空格在目标行渲染为不间断空格（displayChar），其余字符原样
+    expect(target.textContent).toBe('ab\u00A0cd');
   });
 
   it('结果弹窗错误明细以「应为 Y，你敲了 X」配对呈现', () => {
@@ -276,33 +367,6 @@ describe('TrainPanel 缩略键盘主题取色', () => {
     document.body.replaceChildren();
   });
 
-  /** 补上 fixture 刻意省略的 #keyboard-ref canvas，并记录版面色写入 */
-  function mountKeyboardCanvas(): string[] {
-    const colors: string[] = [];
-    const base = { measureText: () => ({ width: 10 }) };
-    const ctx = new Proxy(base, {
-      get(target, prop) {
-        if (prop in target) return (target as Record<string | symbol, unknown>)[prop];
-        return () => undefined;
-      },
-      set(_target, prop, value) {
-        if (
-          (prop === 'fillStyle' || prop === 'strokeStyle' || prop === 'shadowColor') &&
-          typeof value === 'string'
-        ) {
-          colors.push(value);
-        }
-        return true;
-      },
-    }) as unknown as CanvasRenderingContext2D;
-
-    const canvas = document.createElement('canvas');
-    canvas.id = 'keyboard-ref';
-    (canvas as unknown as { getContext: () => unknown }).getContext = () => ctx;
-    document.body.appendChild(canvas);
-    return colors;
-  }
-
   function makePanel(getPalette?: () => CanvasPalette): TrainPanel {
     const typingStub = {
       on: () => () => {},
@@ -319,7 +383,7 @@ describe('TrainPanel 缩略键盘主题取色', () => {
   }
 
   it('注入纸墨白后底色/键帽字/左右手底色均跟随主题', () => {
-    const colors = mountKeyboardCanvas();
+    const { colors } = mountKeyboardCanvas();
     const panel = makePanel(() => THEMES.paper.canvas);
 
     expect(colors).toContain(THEMES.paper.canvas.board);
@@ -331,7 +395,7 @@ describe('TrainPanel 缩略键盘主题取色', () => {
   });
 
   it('未注入取色函数时回退深空夜', () => {
-    const colors = mountKeyboardCanvas();
+    const { colors } = mountKeyboardCanvas();
     const panel = makePanel();
 
     expect(colors).toContain(THEMES.night.canvas.board);
@@ -340,7 +404,7 @@ describe('TrainPanel 缩略键盘主题取色', () => {
   });
 
   it('redraw 用新主题重绘，不重建实例也不丢提示状态', () => {
-    const colors = mountKeyboardCanvas();
+    const { colors } = mountKeyboardCanvas();
     let current: CanvasPalette = THEMES.night.canvas;
     const panel = makePanel(() => current);
 
@@ -352,5 +416,372 @@ describe('TrainPanel 缩略键盘主题取色', () => {
     expect(colors).toContain(THEMES.phosphor.canvas.handRight);
     expect(colors).not.toContain(THEMES.night.canvas.board);
     panel.destroy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 键盘动画：帧循环起停 / 降级开关 / 手指演示
+// ---------------------------------------------------------------------------
+
+interface RafStub {
+  /** 已请求但尚未执行的帧数：为 0 即证明循环已停 */
+  pendingCount: () => number;
+  /** 以指定时间戳执行当前排队的所有帧 */
+  flush: (now: number) => void;
+  restore: () => void;
+}
+
+/** 把手动帧队列换到 window 上，让测试精确控制每一帧的时间戳 */
+function installRafStub(): RafStub {
+  const queue = new Map<number, FrameRequestCallback>();
+  const win = window as unknown as Record<string, unknown>;
+  const realRaf = win.requestAnimationFrame;
+  const realCancel = win.cancelAnimationFrame;
+  let nextId = 1;
+  win.requestAnimationFrame = (cb: FrameRequestCallback) => {
+    const id = nextId++;
+    queue.set(id, cb);
+    return id;
+  };
+  win.cancelAnimationFrame = (id: number) => {
+    queue.delete(id);
+  };
+  return {
+    pendingCount: () => queue.size,
+    flush: (now: number) => {
+      const callbacks = [...queue.values()];
+      queue.clear();
+      for (const cb of callbacks) {
+        cb(now);
+      }
+    },
+    restore: () => {
+      win.requestAnimationFrame = realRaf;
+      win.cancelAnimationFrame = realCancel;
+    },
+  };
+}
+
+/** 把探针录到的 translate 序列按「每帧条目数」切回一帧一帧 */
+function splitFrames(probe: CanvasProbe, perFrame: number): [number, number][][] {
+  const out: [number, number][][] = [];
+  for (let i = 0; i + perFrame <= probe.translates.length; i += perFrame) {
+    out.push(probe.translates.slice(i, i + perFrame));
+  }
+  return out;
+}
+
+/** 取一批颜色里强调色半透明叠加的最大不透明度（层级/引导/按下共用强调色） */
+function maxAccentAlpha(colors: string[]): number {
+  const prefix = alpha(THEMES.night.canvas.accent, 1).slice(0, -2);
+  let max = 0;
+  for (const color of colors) {
+    if (!color.startsWith(prefix)) {
+      continue;
+    }
+    const value = Number(color.slice(prefix.length, -1));
+    if (Number.isFinite(value) && value > max) {
+      max = value;
+    }
+  }
+  return max;
+}
+
+interface AnimHarness {
+  panel: TrainPanel;
+  probe: CanvasProbe;
+  raf: RafStub;
+  feed: (event: TypingEvent) => void;
+  /** 以 ≤16ms 的步长推进合成时钟，与真实 rAF 节奏一致 */
+  advance: (ms: number) => void;
+  motionBtn: HTMLButtonElement;
+  motionLabel: HTMLElement;
+  hands: HTMLElement;
+}
+
+let currentAnim: AnimHarness | null = null;
+let restoreMedia: (() => void) | null = null;
+
+/** 挂载带 canvas 探针与手动帧队列的训练面板，默认进入单词练习（目标 "ab cd"） */
+function mountAnimHarness(wordPractice = true): AnimHarness {
+  const raf = installRafStub();
+  const probe = mountKeyboardCanvas();
+  let callback: ((e: TypingEvent) => void) | null = null;
+  const typingStub = {
+    on: (cb: (e: TypingEvent) => void) => {
+      callback = cb;
+      return () => {};
+    },
+    focus: () => {},
+  } as unknown as TypingEngine;
+  const panel = new TrainPanel({
+    typingEngine: typingStub,
+    keyboard: null,
+    vocabulary: makeVocabStub(),
+    progress: makeProgressStub(),
+    currentUser: () => 'Tester',
+  });
+  if (wordPractice) {
+    (document.querySelector('[data-train-tab="word"]') as HTMLElement).click();
+    (document.getElementById('train-start-btn') as HTMLElement).click();
+  }
+
+  let now = 0;
+  raf.flush(now); // 首帧：dt 哨兵生效，只把动画时钟对齐到 0
+  const harness: AnimHarness = {
+    panel,
+    probe,
+    raf,
+    feed: (event) => callback?.(event),
+    advance: (ms: number) => {
+      let left = ms;
+      while (left > 0) {
+        const step = Math.min(16, left);
+        now += step;
+        raf.flush(now);
+        left -= step;
+      }
+    },
+    motionBtn: document.getElementById('train-motion-btn') as HTMLButtonElement,
+    motionLabel: document.getElementById('train-motion-label') as HTMLElement,
+    hands: document.getElementById('mini-hands-diagram') as HTMLElement,
+  };
+  currentAnim = harness;
+  return harness;
+}
+
+/** 把系统「减少动态效果」偏好置为命中，并登记还原函数 */
+function stubReducedMotionSystem(): void {
+  const win = window as unknown as Record<string, unknown>;
+  const real = win.matchMedia;
+  win.matchMedia = (query: string) => ({
+    matches: query.includes('prefers-reduced-motion'),
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  });
+  restoreMedia = () => {
+    win.matchMedia = real;
+  };
+}
+
+const leftHand = () => document.querySelector('.mini-hand--left') as HTMLElement;
+const rightHand = () => document.querySelector('.mini-hand--right') as HTMLElement;
+const savedMotion = () =>
+  JSON.parse(localStorage.getItem('typeprime_train_settings') ?? '{}').motion;
+
+describe('TrainPanel 键盘动画', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mountFixture();
+  });
+
+  afterEach(() => {
+    currentAnim?.panel.destroy();
+    currentAnim?.raf.restore();
+    currentAnim = null;
+    restoreMedia?.();
+    restoreMedia = null;
+    document.body.replaceChildren();
+  });
+
+  it('正确击键：键帽下沉收缩后回弹过冲，落定后缩放全部回到 1', () => {
+    const a = mountAnimHarness();
+    a.probe.scales.length = 0;
+    a.feed(char('a'));
+    a.advance(224);
+    // 下压段收缩到 1 以下，回弹段短暂越过静止位（easeOutBack 过冲）
+    expect(a.probe.scales.some(([sx]) => sx < 1)).toBe(true);
+    expect(a.probe.scales.some(([sx]) => sx > 1)).toBe(true);
+
+    a.advance(600); // 越过下压 + 回弹 + 涟漪寿命
+    a.probe.scales.length = 0;
+    a.advance(32); // 落定后的帧：只剩呼吸引导，不再改缩放
+    expect(a.probe.scales.length).toBeGreaterThan(0);
+    expect(a.probe.scales.every(([sx]) => sx === 1)).toBe(true);
+  });
+
+  it('错键：该键水平抖动，位移偏离所有静止键位', () => {
+    const a = mountAnimHarness();
+    a.feed(char('a'));
+    a.advance(500); // 让上一次击键的下压回弹与涟漪完全落定
+    const idleX = new Set(a.probe.translates.map(([x]) => x));
+
+    a.probe.translates.length = 0;
+    a.feed(char('x')); // 应为 b，却敲了 x
+    a.advance(120);
+    expect(a.probe.translates.some(([x]) => !idleX.has(x))).toBe(true);
+  });
+
+  it('下一键呼吸引导：只有引导键在垂直方向持续浮动，且帧循环不停', () => {
+    const a = mountAnimHarness();
+    a.probe.translates.length = 0;
+    a.advance(16); // 恰好一帧，用来标定每帧的 translate 条目数
+    const perFrame = a.probe.translates.length;
+    expect(perFrame).toBeGreaterThan(0);
+
+    a.probe.translates.length = 0;
+    a.advance(320);
+    const frames = splitFrames(a.probe, perFrame);
+    expect(frames.length).toBeGreaterThan(2);
+    for (let i = 1; i < frames.length; i++) {
+      const moved = frames[i].filter((p, j) => p[1] !== frames[i - 1][j][1]).length;
+      expect(moved).toBeGreaterThan(0);
+      // 只有引导键在动，不是整盘抖动
+      expect(moved).toBeLessThan(perFrame / 4);
+    }
+    expect(a.raf.pendingCount()).toBeGreaterThan(0);
+  });
+
+  it('键位练习层级高亮：强调色描边浓度渐入到满值后稳定', () => {
+    const a = mountAnimHarness(false);
+    a.probe.colors.length = 0;
+    a.advance(40);
+    const early = maxAccentAlpha(a.probe.colors);
+
+    a.probe.colors.length = 0;
+    a.advance(600);
+    const late = maxAccentAlpha(a.probe.colors);
+    expect(early).toBeLessThan(late);
+    expect(late).toBeCloseTo(0.55, 5);
+  });
+
+  it('练习完成后引导清空，瞬时通道落定即停止帧循环（空闲不空转）', () => {
+    const a = mountAnimHarness();
+    for (const c of ['a', 'b', ' ', 'c', 'd']) {
+      a.feed(char(c));
+    }
+    expect(a.raf.pendingCount()).toBeGreaterThan(0);
+    a.advance(800);
+    expect(a.raf.pendingCount()).toBe(0);
+  });
+
+  it('面板切走后停掉帧循环，切回来补帧续跑', () => {
+    const a = mountAnimHarness();
+    expect(a.raf.pendingCount()).toBeGreaterThan(0);
+
+    a.panel.setPanelVisible(false);
+    expect(a.raf.pendingCount()).toBe(0);
+    a.advance(200);
+    expect(a.raf.pendingCount()).toBe(0);
+
+    a.panel.setPanelVisible(true);
+    expect(a.raf.pendingCount()).toBeGreaterThan(0);
+  });
+
+  it('destroy 释放帧循环，不留悬挂的 rAF', () => {
+    const a = mountAnimHarness();
+    a.feed(char('a'));
+    expect(a.raf.pendingCount()).toBeGreaterThan(0);
+    a.panel.destroy();
+    expect(a.raf.pendingCount()).toBe(0);
+  });
+
+  it('动画按钮：关闭后文案/aria/持久化同步，键帽不再有任何位移缩放', () => {
+    const a = mountAnimHarness();
+    expect(a.motionBtn.getAttribute('aria-pressed')).toBe('true');
+    expect(a.motionLabel.textContent).toBe('动画：开');
+
+    a.motionBtn.click();
+    expect(a.motionBtn.getAttribute('aria-pressed')).toBe('false');
+    expect(a.motionBtn.classList.contains('is-off')).toBe(true);
+    expect(a.motionLabel.textContent).toBe('动画：关');
+    expect(savedMotion()).toBe(false);
+    expect(a.hands.classList.contains('mini-hands--static')).toBe(true);
+
+    a.probe.scales.length = 0;
+    a.feed(char('a'));
+    a.advance(200);
+    expect(a.probe.scales.length).toBeGreaterThan(0);
+    expect(a.probe.scales.every(([sx]) => sx === 1)).toBe(true);
+    // 降级模式无呼吸：瞬时色块停留结束后循环即停
+    a.advance(400);
+    expect(a.raf.pendingCount()).toBe(0);
+
+    a.motionBtn.click();
+    expect(a.motionBtn.getAttribute('aria-pressed')).toBe('true');
+    expect(a.hands.classList.contains('mini-hands--static')).toBe(false);
+    expect(savedMotion()).toBe(true);
+  });
+
+  it('Ctrl+Shift+7 切换键盘动画（用 e.code 判定，避开 Shift 改键值）', () => {
+    const a = mountAnimHarness();
+    const btn = a.motionBtn;
+    const shortcut = () =>
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: '&',
+          code: 'Digit7',
+          ctrlKey: true,
+          shiftKey: true,
+          bubbles: true,
+        })
+      );
+
+    shortcut();
+    expect(btn.getAttribute('aria-pressed')).toBe('false');
+    shortcut();
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('已存储「动画：关」时挂载即为关闭状态', () => {
+    localStorage.setItem('typeprime_train_settings', JSON.stringify({ motion: false }));
+    const a = mountAnimHarness();
+    expect(a.motionBtn.getAttribute('aria-pressed')).toBe('false');
+    expect(a.motionLabel.textContent).toBe('动画：关');
+    expect(a.hands.classList.contains('mini-hands--static')).toBe(true);
+  });
+
+  it('存储损坏时回退系统偏好，不抛异常', () => {
+    localStorage.setItem('typeprime_train_settings', '{不是 JSON');
+    const a = mountAnimHarness();
+    expect(a.motionBtn.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('系统偏好减少动态效果时默认关闭动画', () => {
+    stubReducedMotionSystem();
+    const a = mountAnimHarness();
+    expect(a.motionBtn.getAttribute('aria-pressed')).toBe('false');
+    expect(a.hands.classList.contains('mini-hands--static')).toBe(true);
+  });
+
+  it('显式存储优先于系统偏好：用户开了动画则保持开', () => {
+    stubReducedMotionSystem();
+    localStorage.setItem('typeprime_train_settings', JSON.stringify({ motion: true }));
+    const a = mountAnimHarness();
+    expect(a.motionBtn.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('正确击键点亮对应手指的下点演示，并把引导手分组底点亮', () => {
+    const a = mountAnimHarness();
+    a.feed(char('a')); // a -> 左手小指；下一键 b -> 左手食指
+    expect(
+      leftHand().querySelector('.mini-finger--pinky')?.classList.contains('mini-finger--tap')
+    ).toBe(true);
+    expect(leftHand().classList.contains('mini-hand--active')).toBe(true);
+    expect(rightHand().classList.contains('mini-hand--active')).toBe(false);
+    expect(
+      leftHand().querySelector('.mini-finger--index')?.classList.contains('mini-finger--hint')
+    ).toBe(true);
+  });
+
+  it('错键让实际敲下的键对应手指红色抖动，不牵连另一只手', () => {
+    const a = mountAnimHarness();
+    a.feed(char('a'));
+    a.feed(char('x')); // 应为 b，敲了 x -> 左手无名指
+    expect(
+      leftHand().querySelector('.mini-finger--ring')?.classList.contains('mini-finger--miss')
+    ).toBe(true);
+    expect(
+      rightHand().querySelector('.mini-finger--ring')?.classList.contains('mini-finger--miss')
+    ).toBe(false);
+    // 前一次正确击键的下点演示不被错键抹掉
+    expect(
+      leftHand().querySelector('.mini-finger--pinky')?.classList.contains('mini-finger--tap')
+    ).toBe(true);
   });
 });

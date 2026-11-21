@@ -180,6 +180,9 @@ class App {
     const panel = document.getElementById(`panel-${tab}`);
     panel?.classList.add('active');
 
+    // 键盘动画只在训练面板可见时跑帧循环，切走后停掉以免与游戏渲染争抢帧预算
+    this.trainPanel.setPanelVisible(tab === 'train');
+
     if (tab === 'train') {
       this.focusTrainInput();
     } else {

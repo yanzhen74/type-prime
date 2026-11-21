@@ -96,6 +96,8 @@ export class KeyboardRenderer {
   private hintEl: HTMLElement;
   private handsEl: HTMLElement;
   private fingerElements = new Map<string, HTMLElement>();
+  /** 逐键的按下反馈定时器：连续击键时先清掉上一个，避免提前摘类截断动画 */
+  private pressTimers = new Map<string, number>();
 
   constructor(containerId: string, hintId: string, handsId: string) {
     const container = document.getElementById(containerId);
@@ -287,14 +289,26 @@ export class KeyboardRenderer {
     }
   }
 
-  /** 模拟按键按下反馈：添加 pressed 类，80ms 后自动移除 */
+  /** 模拟按键按下反馈：添加 pressed 类，一个完整下压回弹周期后自动移除
+   *（时长与 style.css 的 key-press 动画、KEY_ANIM.press 保持一致） */
   pressKey(code: string): void {
     const el = this.keyElements.get(code);
     if (!el) return;
+    el.classList.remove('key--pressed');
+    // 强制回流，保证连续击键时动画能重新起播
+    void el.offsetWidth;
     el.classList.add('key--pressed');
-    window.setTimeout(() => {
-      el.classList.remove('key--pressed');
-    }, 80);
+    const existing = this.pressTimers.get(code);
+    if (existing !== undefined) {
+      window.clearTimeout(existing);
+    }
+    this.pressTimers.set(
+      code,
+      window.setTimeout(() => {
+        el.classList.remove('key--pressed');
+        this.pressTimers.delete(code);
+      }, 255)
+    );
   }
 
   private fingerName(finger: Finger): string {

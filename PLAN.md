@@ -417,7 +417,7 @@ type-prime/
 
 - 音效系统 `src/sound-manager.ts`（已实现）。
 - 粒子系统 `src/particle-system.ts`（已实现）。
-- 主题切换（已实现，见 §10.4.3）、键盘动画、Canvas 分层渲染。
+- 主题切换（已实现，见 §10.4.3）、键盘动画（已实现，见 §10.4.4）、Canvas 分层渲染。
 - 可选 WebGL/PixiJS 评估。
 
 ##### 4.1 音效系统实现口径（已交付）
@@ -455,6 +455,19 @@ type-prime/
 - 可读性顺手修复：强调色实底按钮/激活标签内的 kbd 改为继承按钮文字色 + 透明底 + 同色描边（原 muted 灰在亮底上对比不足）；`.train-level-select` 加 flex-wrap 与 label/hint 不收缩，修复窄视口下层级提示被挤成竖排单字。
 - 测试与验证：`theme.test.ts` 22 例（主题表完整性与三主题可辨识、alpha 钳制与非 hex 原样、isThemeName/loadStoredTheme 回退、set/cycle/provider/onChange/存储不可用、三游戏 redraw 取色接线与「换色不重建实例」）；`train-panel.test.ts` 补 3 例缩略键盘取色与 redraw。浏览器实测：三主题 DOM 变量与 Canvas 取色探针逐色核对、三模式可玩、快捷键循环、刷新持久化、运行中/练习中切主题不抢焦点不打断、控制台零报错。
 - 未采取方案：CSS `color-mix()`（旧浏览器不支持会整片丢背景）、在 TS 里读 `getComputedStyle` 取 Canvas 色（每帧读样式性能差且 jsdom 不可测）、切主题重建游戏实例（打断当前局）、把主题色混进世界色（破坏僵尸/手指的认知一致性）。
+
+##### 4.4 键盘动画实现口径（已交付）
+
+- 动画与绘制分离：`src/keyboard-anim.ts` 的 `KeyboardAnimator` 是纯数值状态机（press/error/hint/layer/ripple 五通道 + idle 呼吸），只暴露 `update(now)` / `visual(code)` / `active`；`MiniKeyboardCanvas`（train-panel.ts）负责 rAF 取数绘制。动画不持有 ctx、绘制不持有计时，二者可独立单测。
+- 帧内计时不变量：与粒子系统同口径，`update(now)` 只按调用方注入的时间戳推进，首帧 dt 哨兵 `-1`（dt=0），单帧步长上限 `MAX_KEY_ANIM_STEP = 50ms` 吸收切标签页后的巨大 dt；内部绝不取 `performance.now()`。`active` 为假（无通道且无需呼吸）时 rAF 循环自然停止，不空转。
+- 参数纯数据表 `KEY_ANIM`：press 55/200ms + squash 0.06 + travel 3.5（easeOutBack 回弹过冲是设计特性，端点显式归 0/1）；error 340ms、40ms 起振、amp 3.6、3 周期横向抖动；hint 1500ms 呼吸 lift 1.4 / glow 5–14 / fill 0.26–0.44；layer 260/180ms + stagger 22 逐键渐入（键位练习层级高亮）；ripple 420ms / spread 0.55 / alpha 0.5，池上限 `MAX_KEY_RIPPLES = 12` 超出丢最老。
+- 键座/键帽双层绘制：先画不随动画变换的键座，再对键帽以中心为原点施加 `translate(shake, dy)` / `scale` 后叠半透明状态色与描边（强度由通道给出，过渡连续）；实色强调/危险底（press>0.5 或 error>0.5）字色切 `pal.onAccent`，修复 paper 主题深红/深青底上深字不可读。
+- 起停与可见性：`setPanelVisible(false)` 停循环、`true` 恢复；练习完成/重置后无通道即停；`destroy()` 取消 rAF 并退订。重复切换面板不叠循环（浏览器实测单循环约 244 次绘制/帧、~95fps）。
+- 降级双通道：系统 `prefers-reduced-motion` 与用户开关共用 reduced 通道（纯色块停留 80/320ms、无位移无抖动）；DOM 手指图示由 `MiniHandsDiagram.setMotion()` 切 `.mini-hands--static`（animation/transition:none）+ 媒体查询双兜底，开关与系统偏好任一生效都静态，颜色与手指身份标识保留。
+- 开关与持久化：键盘参考区标题行右侧「动画：开/关」按钮 + 全局 `Ctrl+Shift+7`（按 `e.code === 'Digit7'` 判定避开 Shift 布局差异）；值存 `typeprime_train_settings.motion`，存储损坏回退默认；系统 reduce 时默认关、显式存储优先。F1 帮助「指法训练」组与页脚补对应行；标题行 `.keyboard-ref-bar` 加 flex-wrap 防窄视口挤压。
+- 顺手修复两个既有缺陷：① 完成态 `hideCursor()` 摘除光标后回退再输入，`syncInputSpans()` 的 `insertBefore(span, cursorEl)` 抛 NotFoundError（浏览器曾累计 53 条）→ 改为光标父节点判断 + appendChild；② `renderModeHint()` 写纯文本节点而 `syncTargetSpans()` 只增删 span，空文章态加载文章后目标行残留「选择一篇预装文章…」提示文案 → `renderPreview()` 先移除非元素子节点。各补回归测试。
+- 测试与验证：`keyboard-anim.test.ts` 47 例（包络端点/过冲/抖动周期/呼吸/层级 stagger/ripple 池与淡出/步长上限/reduced 通道/active 起停）；`train-panel.test.ts` 新增 15 例动画（手动 rAF 队列精确控帧 + canvas Proxy 探针记录 fillStyle/translate/scale：按下收缩与过冲落定、错键平移偏离静止位、呼吸位移、层级 accent 描边 0→0.55 渐入、完成/切面板/destroy 停循环、开关与快捷键双向、aria/label/is-off/localStorage/手指静态同步、存储损坏回退、系统 reduce 默认关、显式存储优先、手指 tap/hint/miss 不牵连另一只手）+ 2 例回归。基线 17 文件 282 例全绿，`build:release` 182.2 KB。浏览器实测（须用 `Cache-Control: no-store` 服务器：dist 内部模块 import 无版本 query，启发式缓存会沿用旧模块）：按下帧键帽下沉且字可读、错键红底左偏、hint 青晕与拇指琥珀描边正确、切游戏面板 1.2s 绘制数 0 切回恢复、开关 off 绘制数 0 且手指静态、刷新持久化、完成结算与错键明细正常、控制台零报错。
+- 未采取方案：第三方动画库（新增依赖且与帧内计时口径冲突）、每帧新建对象/数组（GC 抖动）、只做 CSS 过渡（canvas 键帽无法用 CSS 变换，也无法与错键/层级/涟漪通道合成）、把动画计时写进绘制函数（不可单测）。
 
 #### 5. 测试（已覆盖）
 

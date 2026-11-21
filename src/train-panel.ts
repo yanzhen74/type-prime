@@ -22,6 +22,7 @@ import type { VocabularyBank } from './vocabulary.js';
 import type { UserProgress } from './storage.js';
 import type { ReviewScheduler } from './review.js';
 import { alpha, THEMES, type CanvasPalette } from './theme.js';
+import { KEY_ANIM, KeyboardAnimator, clamp01, easeOutCubic } from './keyboard-anim.js';
 
 /** 单词练习每次取词数量 */
 const WORD_COUNT = 20;
@@ -37,11 +38,41 @@ interface WordPracticePref {
   difficulty: string;
 }
 
-/** 键盘参考区按键按下的反馈时长（毫秒） */
-const MINI_PRESS_MS = 80;
+/** 训练面板偏好（键盘动画开关）的 localStorage 键 */
+const TRAIN_SETTINGS_KEY = 'typeprime_train_settings';
 
-/** 键盘参考区错误按键的红色闪烁时长（毫秒，长于普通按下以强调错误） */
-const MINI_ERROR_MS = 320;
+/** 系统「减少动态效果」偏好：命中时默认关闭键盘动画 */
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+/** 读键盘动画开关：显式存储优先，缺失/损坏时跟随系统偏好 */
+function loadMotionEnabled(): boolean {
+  try {
+    const raw = localStorage.getItem(TRAIN_SETTINGS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as { motion?: unknown };
+      if (typeof parsed.motion === 'boolean') {
+        return parsed.motion;
+      }
+    }
+  } catch {
+    /* 存储不可用或数据损坏时跟随系统偏好 */
+  }
+  return !prefersReducedMotion();
+}
+
+/** 写键盘动画开关：存储不可用时仅本次会话生效 */
+function saveMotionEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(TRAIN_SETTINGS_KEY, JSON.stringify({ motion: enabled }));
+  } catch {
+    /* 忽略写入失败，动画开关仍在内存中生效 */
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 字符 -> KeyboardEvent.code 映射
@@ -294,6 +325,39 @@ const MINI_PAD = 10;
 const MINI_CANVAS_W = MINI_PAD * 2 + 13 * MINI_KEY_W + 12 * MINI_GAP;
 const MINI_CANVAS_H = MINI_PAD * 2 + 5 * MINI_KEY_H + 4 * MINI_GAP;
 
+/** 无 requestAnimationFrame 环境下的兜底帧间隔（毫秒） */
+const MINI_FRAME_MS = 16;
+
+/** 键帽几何：布局一次算好，键帽绘制与涟漪共用同一份坐标 */
+interface MiniKeyLayout {
+  key: MiniKey;
+  x: number;
+  y: number;
+  w: number;
+}
+
+const MINI_LAYOUT: MiniKeyLayout[] = [];
+for (let rowIdx = 0; rowIdx < MINI_ROWS.length; rowIdx++) {
+  const row = MINI_ROWS[rowIdx];
+  const y = MINI_PAD + rowIdx * (MINI_KEY_H + MINI_GAP);
+  let x = MINI_PAD;
+  if (row.length === 1 && row[0].width) {
+    // 空格行居中
+    x = (MINI_CANVAS_W - row[0].width) / 2;
+  }
+  for (const key of row) {
+    const w = key.width ?? MINI_KEY_W;
+    MINI_LAYOUT.push({ key, x, y, w });
+    x += w + MINI_GAP;
+  }
+}
+
+/** code -> 键帽几何，涟漪定位用 */
+const MINI_LAYOUT_BY_CODE = new Map<string, MiniKeyLayout>();
+for (const item of MINI_LAYOUT) {
+  MINI_LAYOUT_BY_CODE.set(item.key.code, item);
+}
+
 function roundRectPath(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -312,23 +376,41 @@ function roundRectPath(
 }
 
 /**
- * 键盘参考区渲染器：在 #keyboard-ref canvas 上绘制缩略键盘，
- * 支持下一键提示（hint）、层级高亮（layer）与按键反馈（pressed）三种状态，
- * 与 KeyboardRenderer（DOM 版）的状态类一一对应。
+ * 键盘参考区渲染器：在 #keyboard-ref canvas 上绘制缩略键盘。
+ *
+ * 静态状态（下一键提示 hint / 层级高亮 layer / 按键反馈 pressed / 错键 error）
+ * 与 KeyboardRenderer（DOM 版）一一对应；动画数值全部委托给 KeyboardAnimator，
+ * 本类只负责取数绘制与驱动帧循环：有动画在飞时请求下一帧，全部落定后自然停止。
  */
 class MiniKeyboardCanvas {
   private ctx: CanvasRenderingContext2D | null = null;
-  private hintCode: string | null = null;
-  private layerCodes = new Set<string>();
-  private pressedCode: string | null = null;
-  private pressTimer: number | null = null;
-  private errorCode: string | null = null;
-  private errorTimer: number | null = null;
   /** 版面色取色函数（默认深空夜，TrainPanel 注入 ThemeManager.provider()） */
   private readonly getPalette: () => CanvasPalette;
+  private readonly anim: KeyboardAnimator;
+  /** 面板可见时才跑循环：切到游戏面板后停掉，避免与游戏渲染争抢帧预算 */
+  private visible = true;
+  private rafId: number | null = null;
+  private timerId: number | null = null;
+  private fallbackNow = 0;
 
-  constructor(canvas: HTMLCanvasElement | null, getPalette?: () => CanvasPalette) {
+  private readonly onFrame = (now: number): void => {
+    this.rafId = null;
+    this.tick(now);
+  };
+
+  private readonly onFallbackFrame = (): void => {
+    this.timerId = null;
+    this.fallbackNow += MINI_FRAME_MS;
+    this.tick(this.fallbackNow);
+  };
+
+  constructor(
+    canvas: HTMLCanvasElement | null,
+    getPalette?: () => CanvasPalette,
+    reducedMotion = false
+  ) {
     this.getPalette = getPalette ?? (() => THEMES.night.canvas);
+    this.anim = new KeyboardAnimator({ reducedMotion });
     if (!canvas) {
       return;
     }
@@ -340,63 +422,97 @@ class MiniKeyboardCanvas {
 
   /** 主题切换后重绘缩略键盘（不重建实例，保留 hint/layer/pressed 状态） */
   redraw(): void {
-    this.draw();
+    this.refresh();
   }
 
   setHint(code: string | null): void {
-    this.hintCode = code;
-    this.draw();
+    this.anim.setHint(code);
+    this.refresh();
   }
 
   setLayer(codes: string[]): void {
-    this.layerCodes = new Set(codes);
-    this.draw();
+    this.anim.setLayer(codes);
+    this.refresh();
   }
 
   press(code: string): void {
     if (!this.ctx) {
       return;
     }
-    this.pressedCode = code;
-    this.draw();
-    if (this.pressTimer !== null) {
-      window.clearTimeout(this.pressTimer);
-    }
-    this.pressTimer = window.setTimeout(() => {
-      this.pressedCode = null;
-      this.draw();
-    }, MINI_PRESS_MS);
+    this.anim.press(code);
+    this.refresh();
   }
 
-  /** 错误按键反馈：红色闪烁该键（时长长于普通按下），与 press 互斥且优先 */
+  /** 错误按键反馈：抖动 + 红色闪烁该键（时长长于普通按下），与 press 互斥且优先 */
   pressError(code: string): void {
     if (!this.ctx) {
       return;
     }
-    this.errorCode = code;
-    this.pressedCode = null;
-    if (this.pressTimer !== null) {
-      window.clearTimeout(this.pressTimer);
-      this.pressTimer = null;
+    this.anim.pressError(code);
+    this.refresh();
+  }
+
+  /** 面板可见性变更：隐藏时立即停掉帧循环，重新可见时补一帧并按需续跑 */
+  setVisible(visible: boolean): void {
+    if (this.visible === visible) {
+      return;
     }
-    this.draw();
-    if (this.errorTimer !== null) {
-      window.clearTimeout(this.errorTimer);
+    this.visible = visible;
+    if (visible) {
+      this.refresh();
+    } else {
+      this.cancel();
     }
-    this.errorTimer = window.setTimeout(() => {
-      this.errorCode = null;
-      this.draw();
-    }, MINI_ERROR_MS);
+  }
+
+  /** 动画开关：关闭时降级为纯色块停留（无位移/抖动/涟漪/呼吸） */
+  setReducedMotion(reduced: boolean): void {
+    this.anim.setReducedMotion(reduced);
+    this.refresh();
   }
 
   dispose(): void {
-    if (this.pressTimer !== null) {
-      window.clearTimeout(this.pressTimer);
-      this.pressTimer = null;
+    this.cancel();
+    this.anim.reset();
+  }
+
+  private tick(now: number): void {
+    this.anim.update(now);
+    this.draw();
+    if (this.anim.active) {
+      this.schedule();
     }
-    if (this.errorTimer !== null) {
-      window.clearTimeout(this.errorTimer);
-      this.errorTimer = null;
+  }
+
+  private refresh(): void {
+    this.draw();
+    this.schedule();
+  }
+
+  private schedule(): void {
+    if (!this.ctx || !this.visible) {
+      return;
+    }
+    if (this.rafId !== null || this.timerId !== null) {
+      return;
+    }
+    if (typeof window.requestAnimationFrame === 'function') {
+      this.rafId = window.requestAnimationFrame(this.onFrame);
+    } else {
+      this.timerId = window.setTimeout(this.onFallbackFrame, MINI_FRAME_MS);
+    }
+  }
+
+  private cancel(): void {
+    if (this.rafId !== null) {
+      if (typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(this.rafId);
+      }
+      this.rafId = null;
+    }
+    if (this.timerId !== null) {
+      window.clearTimeout(this.timerId);
+      this.timerId = null;
     }
   }
 
@@ -405,79 +521,134 @@ class MiniKeyboardCanvas {
     if (!ctx) {
       return;
     }
+    const pal = this.getPalette();
     ctx.clearRect(0, 0, MINI_CANVAS_W, MINI_CANVAS_H);
-    ctx.fillStyle = this.getPalette().board;
+    ctx.fillStyle = pal.board;
     ctx.fillRect(0, 0, MINI_CANVAS_W, MINI_CANVAS_H);
 
-    for (let rowIdx = 0; rowIdx < MINI_ROWS.length; rowIdx++) {
-      const row = MINI_ROWS[rowIdx];
-      const y = MINI_PAD + rowIdx * (MINI_KEY_H + MINI_GAP);
-      let x = MINI_PAD;
-      if (row.length === 1 && row[0].width) {
-        // 空格行居中
-        x = (MINI_CANVAS_W - row[0].width) / 2;
-      }
-      for (const key of row) {
-        const w = key.width ?? MINI_KEY_W;
-        this.drawKey(ctx, key, x, y, w);
-        x += w + MINI_GAP;
-      }
+    // 键座先铺底：键帽下沉时露出的底座边缘让「按下」有物理深度
+    for (const item of MINI_LAYOUT) {
+      this.drawSocket(ctx, item, pal);
+    }
+    // 涟漪画在键帽之下，只露出向外扩张的那一圈描边
+    this.drawRipples(ctx, pal);
+    for (const item of MINI_LAYOUT) {
+      this.drawKey(ctx, item, pal);
     }
   }
 
-  private drawKey(
-    ctx: CanvasRenderingContext2D,
-    key: MiniKey,
-    x: number,
-    y: number,
-    w: number
-  ): void {
-    const isError = this.errorCode === key.code;
-    const isPressed = !isError && this.pressedCode === key.code;
-    const isHint = !isPressed && !isError && this.hintCode === key.code;
-    const isLayer = !isPressed && !isError && !isHint && this.layerCodes.has(key.code);
-    const pal = this.getPalette();
+  /** 键座：比键帽略大一圈的暗色底座，下沿多留 2px 形成唇边 */
+  private drawSocket(ctx: CanvasRenderingContext2D, item: MiniKeyLayout, pal: CanvasPalette): void {
+    ctx.fillStyle = pal.grid;
+    roundRectPath(ctx, item.x - 2, item.y - 1, item.w + 4, MINI_KEY_H + 4, 8);
+    ctx.fill();
+  }
+
+  /** 击键涟漪：以键帽几何为中心外扩并淡出的一圈描边 */
+  private drawRipples(ctx: CanvasRenderingContext2D, pal: CanvasPalette): void {
+    const ripples = this.anim.rippleList;
+    if (ripples.length === 0) {
+      return;
+    }
+    ctx.save();
+    for (const ripple of ripples) {
+      const item = MINI_LAYOUT_BY_CODE.get(ripple.code);
+      if (!item) {
+        continue;
+      }
+      const t = clamp01(ripple.age / ripple.ttl);
+      const grow = 1 + KEY_ANIM.ripple.spread * easeOutCubic(t);
+      const w = item.w * grow;
+      const h = MINI_KEY_H * grow;
+      const cx = item.x + item.w / 2;
+      const cy = item.y + MINI_KEY_H / 2;
+      const color = ripple.kind === 'error' ? pal.danger : pal.accent;
+      ctx.strokeStyle = alpha(color, KEY_ANIM.ripple.alpha * (1 - t));
+      ctx.lineWidth = 0.5 + 2 * (1 - t);
+      roundRectPath(ctx, cx - w / 2, cy - h / 2, w, h, 6 * grow);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  private drawKey(ctx: CanvasRenderingContext2D, item: MiniKeyLayout, pal: CanvasPalette): void {
+    const { key, x, y, w } = item;
+    const v = this.anim.visual(key.code);
+    const isError = v.error > 0;
+    const isPressed = !isError && v.press > 0;
+    const isHint = !isError && !isPressed && this.anim.hint === key.code;
+    const isLayer = !isError && !isPressed && !isHint && v.layer > 0;
 
     ctx.save();
+    // 以键帽中心为原点施加位移/缩放，局部坐标即 (0,0)-(w,MINI_KEY_H)
+    ctx.translate(x + w / 2 + v.shake, y + MINI_KEY_H / 2 + v.dy);
+    ctx.scale(v.scale, v.scale);
+    ctx.translate(-w / 2, -MINI_KEY_H / 2);
+
+    roundRectPath(ctx, 0, 0, w, MINI_KEY_H, 6);
+    ctx.fillStyle = key.hand === 'left' ? pal.handLeft : pal.handRight;
+    ctx.fill();
+
+    // 状态色以半透明叠加在底色上，强度由动画通道给出，因此过渡是连续的
+    if (isLayer) {
+      ctx.fillStyle = alpha(pal.accent, 0.3 * v.layer);
+      ctx.fill();
+    }
+    if (isHint) {
+      const fill = KEY_ANIM.hint.fillMin + (KEY_ANIM.hint.fillMax - KEY_ANIM.hint.fillMin) * v.hint;
+      ctx.fillStyle = alpha(pal.accent, fill);
+      ctx.fill();
+    }
+    if (isPressed) {
+      ctx.fillStyle = alpha(pal.accent, v.press);
+      ctx.fill();
+    }
     if (isError) {
-      ctx.fillStyle = pal.danger;
-    } else if (isPressed) {
-      ctx.fillStyle = pal.accent;
-    } else if (isHint) {
-      ctx.fillStyle = alpha(pal.accent, 0.35);
-    } else if (isLayer) {
-      ctx.fillStyle = alpha(pal.accent, 0.3);
-    } else {
-      ctx.fillStyle = key.hand === 'left' ? pal.handLeft : pal.handRight;
+      ctx.fillStyle = alpha(pal.danger, v.error);
+      ctx.fill();
     }
 
     if (isError) {
-      ctx.strokeStyle = pal.danger;
+      ctx.strokeStyle = alpha(pal.danger, 0.35 + 0.65 * v.error);
       ctx.lineWidth = 2;
       ctx.shadowColor = pal.danger;
-      ctx.shadowBlur = 12;
-    } else if (isHint || isPressed) {
+      ctx.shadowBlur = v.glow;
+    } else if (isPressed) {
+      ctx.strokeStyle = alpha(pal.accent, 0.35 + 0.65 * v.press);
+      ctx.lineWidth = 2;
+      ctx.shadowColor = pal.accent;
+      ctx.shadowBlur = v.glow;
+    } else if (isHint) {
       ctx.strokeStyle = pal.accent;
       ctx.lineWidth = 2;
-      if (isHint) {
-        ctx.shadowColor = pal.accent;
-        ctx.shadowBlur = 10;
-      }
+      ctx.shadowColor = pal.accent;
+      ctx.shadowBlur = v.glow;
+    } else if (isLayer) {
+      ctx.strokeStyle = alpha(pal.accent, 0.55 * v.layer);
+      ctx.lineWidth = 1.5;
     } else {
       ctx.strokeStyle = FINGER_COLORS[key.finger];
       ctx.lineWidth = 1.5;
     }
-
-    roundRectPath(ctx, x, y, w, MINI_KEY_H, 6);
-    ctx.fill();
     ctx.stroke();
-    ctx.restore();
 
-    ctx.fillStyle = isPressed ? pal.onAccent : pal.ink;
+    // 顶沿一道极淡的高光，配合键座形成键帽的立体感
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = alpha(pal.ink, 0.07);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(5, 1.5);
+    ctx.lineTo(w - 5, 1.5);
+    ctx.stroke();
+
+    // 实色强调/危险底上用 onAccent 保证三套主题都可读（paper 的 danger 是深红）
+    const solid = (isPressed && v.press > 0.5) || (isError && v.error > 0.5);
+    ctx.fillStyle = solid ? pal.onAccent : pal.ink;
     ctx.font = key.width ? '600 12px "Segoe UI", sans-serif' : '700 13px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(key.label, x + w / 2, y + MINI_KEY_H / 2);
+    ctx.fillText(key.label, w / 2, MINI_KEY_H / 2);
+    ctx.restore();
   }
 }
 
@@ -486,13 +657,18 @@ class MiniKeyboardCanvas {
 // ---------------------------------------------------------------------------
 
 /**
- * 在训练面板键盘参考区下方渲染左右手手指图示，
- * 支持当 hint 某键时高亮对应手指。
+ * 在训练面板键盘参考区下方渲染左右手手指图示。
+ *
+ * hint 高亮是预判式教学引导（下一键该用哪根手指）；tap/miss 是按标准指法映射
+ * 做的击键演示动画，系统无法得知用户真实用了哪根手指，因此不做任何指法判定。
  */
 class MiniHandsDiagram {
   private readonly container: HTMLElement;
   private readonly fingerEls = new Map<string, HTMLElement>();
+  private readonly handEls = new Map<Hand, HTMLElement>();
+  private readonly flashTimers = new Map<string, number>();
   private activeKey: string | null = null;
+  private activeHand: Hand | null = null;
 
   constructor(container: HTMLElement | null) {
     if (!container) {
@@ -503,7 +679,7 @@ class MiniHandsDiagram {
     this.render();
   }
 
-  /** 高亮指定手 + 手指 */
+  /** 高亮指定手 + 手指（同时点亮所属手的分组底） */
   setHighlight(hand: Hand | null, finger: Finger | null): void {
     this.clearHighlight();
     if (!hand || !finger) return;
@@ -512,6 +688,8 @@ class MiniHandsDiagram {
     if (el) {
       el.classList.add('mini-finger--hint');
       this.activeKey = key;
+      this.activeHand = hand;
+      this.handEls.get(hand)?.classList.add('mini-hand--active');
     }
   }
 
@@ -521,6 +699,58 @@ class MiniHandsDiagram {
       this.fingerEls.get(this.activeKey)?.classList.remove('mini-finger--hint');
       this.activeKey = null;
     }
+    if (this.activeHand) {
+      this.handEls.get(this.activeHand)?.classList.remove('mini-hand--active');
+      this.activeHand = null;
+    }
+  }
+
+  /** 正确击键：对应手指做一次下点回弹，时长与 canvas 键帽下压回弹一致 */
+  tap(hand: Hand, finger: Finger): void {
+    this.flash(hand, finger, 'mini-finger--tap', KEY_ANIM.press.downMs + KEY_ANIM.press.upMs);
+  }
+
+  /** 错误击键：对应手指红色抖动，时长与 canvas 错键反馈一致 */
+  miss(hand: Hand, finger: Finger): void {
+    this.flash(hand, finger, 'mini-finger--miss', KEY_ANIM.error.ms);
+  }
+
+  /**
+   * 动画开关同步到手指图示：关闭时挂 .mini-hands--static，由 CSS 摘掉全部
+   * 手指动画（引导脉冲 / 击键下点 / 错键抖动），只保留静态高亮色。
+   * 系统「减少动态效果」另由 prefers-reduced-motion 媒体查询兜底。
+   */
+  setMotion(enabled: boolean): void {
+    this.container.classList.toggle('mini-hands--static', !enabled);
+  }
+
+  /** 释放一次性动画定时器 */
+  dispose(): void {
+    for (const timer of this.flashTimers.values()) {
+      window.clearTimeout(timer);
+    }
+    this.flashTimers.clear();
+  }
+
+  private flash(hand: Hand, finger: Finger, cls: string, ms: number): void {
+    const key = `${hand}:${finger}`;
+    const el = this.fingerEls.get(key);
+    if (!el) return;
+    const existing = this.flashTimers.get(key);
+    if (existing !== undefined) {
+      window.clearTimeout(existing);
+    }
+    // 先摘类并强制回流，保证连续击键时动画能重新起播
+    el.classList.remove('mini-finger--tap', 'mini-finger--miss');
+    void el.offsetWidth;
+    el.classList.add(cls);
+    this.flashTimers.set(
+      key,
+      window.setTimeout(() => {
+        el.classList.remove(cls);
+        this.flashTimers.delete(key);
+      }, ms)
+    );
   }
 
   private render(): void {
@@ -541,6 +771,7 @@ class MiniHandsDiagram {
   private createHand(label: string, handSide: Hand, fingers: Finger[]): HTMLElement {
     const hand = document.createElement('div');
     hand.className = `mini-hand mini-hand--${handSide}`;
+    this.handEls.set(handSide, hand);
 
     const title = document.createElement('div');
     title.className = 'mini-hand-label';
@@ -596,6 +827,10 @@ export class TrainPanel {
   private readonly trainEngine = new TrainEngine();
   private readonly miniKeyboard: MiniKeyboardCanvas;
   private readonly miniHands: MiniHandsDiagram;
+  /** 键盘动画开关（持久化到 typeprime_train_settings，缺省跟随系统减少动态效果偏好） */
+  private motionEnabled = true;
+  private motionBtn: HTMLButtonElement | null = null;
+  private motionLabel: HTMLElement | null = null;
 
   private readonly abort = new AbortController();
   private readonly disposers: (() => void)[] = [];
@@ -658,25 +893,47 @@ export class TrainPanel {
   constructor(deps: TrainPanelDeps) {
     this.deps = deps;
     this.cacheDom();
+    this.motionEnabled = loadMotionEnabled();
     const canvas = document.getElementById('keyboard-ref');
     this.miniKeyboard = new MiniKeyboardCanvas(
       canvas instanceof HTMLCanvasElement ? canvas : null,
-      deps.getPalette
+      deps.getPalette,
+      !this.motionEnabled
     );
     const handsContainer = document.getElementById('mini-hands-diagram');
     this.miniHands = new MiniHandsDiagram(handsContainer);
+    this.miniHands.setMotion(this.motionEnabled);
     this.bindEvents();
     this.registerEngineCallbacks();
     this.initLevelSelector();
     this.initArticleSelector();
     this.initWordSelector();
     this.updatePhaseIndicator();
+    this.updateMotionButton();
     this.preparePreview();
+    // 面板不可见时不跑动画循环（如启动即停在其他面板）
+    this.miniKeyboard.setVisible(this.isPanelActive());
   }
 
   /** 主题切换后重绘缩略键盘（DOM 部分由 CSS 变量自动换肤） */
   redraw(): void {
     this.miniKeyboard.redraw();
+  }
+
+  /** 面板可见性变更：隐藏时停掉键盘动画帧循环，避免与游戏渲染争抢帧预算 */
+  setPanelVisible(visible: boolean): void {
+    this.miniKeyboard.setVisible(visible);
+  }
+
+  /** 切换键盘动画开关（按钮点击与 Ctrl+Shift+7 共用） */
+  toggleMotion(): void {
+    this.motionEnabled = !this.motionEnabled;
+    saveMotionEnabled(this.motionEnabled);
+    this.miniKeyboard.setReducedMotion(!this.motionEnabled);
+    this.miniHands.setMotion(this.motionEnabled);
+    this.updateMotionButton();
+    // 按钮点击后焦点留在按钮上会吃掉 Enter/空格，交还给隐藏输入框
+    this.deps.typingEngine.focus();
   }
 
   /** 释放面板持有的监听器与定时器 */
@@ -687,6 +944,17 @@ export class TrainPanel {
     }
     this.disposers.length = 0;
     this.miniKeyboard.dispose();
+    this.miniHands.dispose();
+  }
+
+  /** 同步动画开关按钮的文案与 aria-pressed（按钮缺失时静默跳过） */
+  private updateMotionButton(): void {
+    if (!this.motionBtn) return;
+    this.motionBtn.setAttribute('aria-pressed', String(this.motionEnabled));
+    this.motionBtn.classList.toggle('is-off', !this.motionEnabled);
+    if (this.motionLabel) {
+      this.motionLabel.textContent = `动画：${this.motionEnabled ? '开' : '关'}`;
+    }
   }
 
   /**
@@ -777,6 +1045,9 @@ export class TrainPanel {
     this.phaseWrap = requireEl<HTMLElement>('train-phase-select');
     this.phaseIndicator = requireEl<HTMLElement>('phase-indicator');
     this.fingerHintEl = requireEl<HTMLElement>('mini-finger-hint');
+    // 动画开关为可选控件：旧模板/测试 fixture 缺失时快捷键仍可用
+    this.motionBtn = document.getElementById('train-motion-btn') as HTMLButtonElement | null;
+    this.motionLabel = document.getElementById('train-motion-label');
     this.cursorEl = document.createElement('span');
     this.cursorEl.className = 'cursor';
   }
@@ -815,6 +1086,7 @@ export class TrainPanel {
     this.resetBtn.addEventListener('click', () => this.resetPractice(), opts);
     this.nextBtn.addEventListener('click', () => this.handleNext(), opts);
     this.resultCloseBtn.addEventListener('click', () => this.hideResultModal(), opts);
+    this.motionBtn?.addEventListener('click', () => this.toggleMotion(), opts);
 
     const offTyping = this.deps.typingEngine.on((event) => this.handleTypingEvent(event));
     this.disposers.push(offTyping);
@@ -1104,6 +1376,12 @@ export class TrainPanel {
   }
 
   private renderPreview(text: string): void {
+    // renderModeHint 写入的是纯文本节点，不清掉会与目标 span 混排残留提示文案
+    for (const node of [...this.textTarget.childNodes]) {
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        node.remove();
+      }
+    }
     this.syncTargetSpans(text);
     this.updateTargetStates(0);
     this.clearInputDisplay();
@@ -1214,17 +1492,21 @@ export class TrainPanel {
     }
 
     // 字符按键反馈（键盘动画）：先判定该字符在当前目标位是否为错，
-    // 错误则红色闪烁该键（pressError），正确则维持普通按下反馈（press）。
+    // 错误则红色抖动该键（pressError），正确则下压回弹（press）；
+    // 手指图示同步做一次击键演示（按标准指法映射，非真实手指检测）。
     if (event.type === 'char' && event.char) {
       const code = charToCode(event.char);
       if (code) {
         const nextChar = this.trainEngine.getNextChar();
         const isError = nextChar !== null && event.char !== nextChar;
+        const info = MINI_CODE_MAP.get(code);
         this.deps.keyboard?.pressKey(code);
         if (isError) {
           this.miniKeyboard.pressError(code);
+          if (info) this.miniHands.miss(info.hand, info.finger);
         } else {
           this.miniKeyboard.press(code);
+          if (info) this.miniHands.tap(info.hand, info.finger);
         }
       }
     }
@@ -1233,7 +1515,7 @@ export class TrainPanel {
     this.trainEngine.handleInput(event);
   }
 
-  /** 全局快捷键：Ctrl+Shift+数字切换子标签，Ctrl+←/→切换阶段，Tab 在 idle 状态开始练习 */
+  /** 全局快捷键：Ctrl+Shift+数字切换子标签，Ctrl+Shift+7 切动画，Ctrl+←/→切换阶段，Tab 在 idle 状态开始练习 */
   private handleGlobalKeydown(e: KeyboardEvent): void {
     if (!this.isPanelActive()) {
       return;
@@ -1262,6 +1544,12 @@ export class TrainPanel {
       if (mode) {
         e.preventDefault();
         this.switchMode(mode);
+        return;
+      }
+      // Ctrl+Shift+7 切换键盘动画（用 e.code 避开 Shift 改变 e.key 的布局差异）
+      if (e.code === 'Digit7') {
+        e.preventDefault();
+        this.toggleMotion();
         return;
       }
     }
@@ -1424,7 +1712,13 @@ export class TrainPanel {
       const span = document.createElement('span');
       span.className = 'char';
       this.inputSpans.push(span);
-      this.textInput.insertBefore(span, this.cursorEl);
+      // 完成态光标已被 hideCursor 摘除，此时回退再输入会走到这里：
+      // 光标不在输入行内时直接追加，避免 insertBefore 抛 NotFoundError
+      if (this.cursorEl.parentNode === this.textInput) {
+        this.textInput.insertBefore(span, this.cursorEl);
+      } else {
+        this.textInput.appendChild(span);
+      }
     }
     while (this.inputSpans.length > completed) {
       this.inputSpans.pop()?.remove();

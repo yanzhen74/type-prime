@@ -919,6 +919,47 @@ th {
   gap: 0.5rem;
 }
 
+/* 键盘参考区标题行：左侧标识 + 右侧动画开关；窄视口允许换行不挤压 */
+.keyboard-ref-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.keyboard-ref-title {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.keyboard-motion-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.78rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.keyboard-motion-btn kbd {
+  margin-left: 0;
+  font-size: 0.66rem;
+}
+
+.keyboard-motion-btn[aria-pressed='true'] {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  color: var(--accent);
+}
+
+.keyboard-motion-btn.is-off {
+  color: var(--muted);
+  border-color: var(--border);
+}
+
 .mini-finger-hint {
   text-align: center;
   font-size: 0.95rem;
@@ -962,6 +1003,12 @@ th {
 
 .mini-hand--right {
   background: rgba(var(--hand-right-rgb), 0.6);
+}
+
+/* 当前引导手指所属的手：分组底微亮，让「该用哪只手」一眼可辨 */
+.mini-hand--active {
+  background: rgba(var(--accent-rgb), 0.14);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.35);
 }
 
 .mini-hand-label {
@@ -1034,6 +1081,78 @@ th {
   }
 }
 
+/* 击键演示：与 canvas 键帽下压回弹同长（KEY_ANIM.press.downMs + upMs = 255ms）。
+   按标准指法映射演示应使用的手指，不代表检测到用户真实击键手指。 */
+.mini-finger--tap {
+  animation: mini-finger-tap 255ms cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+@keyframes mini-finger-tap {
+  0% {
+    transform: translateY(0) scaleY(1);
+  }
+  22% {
+    transform: translateY(5px) scaleY(0.84);
+  }
+  60% {
+    transform: translateY(-2px) scaleY(1.06);
+  }
+  100% {
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+/* 错键演示：与 canvas 错键反馈同长（KEY_ANIM.error.ms = 340ms） */
+.mini-finger--miss {
+  background: rgba(var(--danger-rgb), 0.45);
+  border-color: var(--danger);
+  animation: mini-finger-miss 340ms ease;
+}
+
+@keyframes mini-finger-miss {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-3px);
+  }
+  35% {
+    transform: translateX(3px);
+  }
+  55% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+/* 用户在训练面板关掉键盘动画时，手指图示同步降级为静态高亮：
+   引导脉冲 / 击键下点 / 错键抖动全部停掉，颜色与身份标识保留 */
+.mini-hands--static .mini-finger,
+.mini-hands--static .mini-finger--hint,
+.mini-hands--static .mini-finger--tap,
+.mini-hands--static .mini-finger--miss {
+  animation: none;
+  transition: none;
+}
+
+/* 系统「减少动态效果」：关掉键盘/手指/错字符的循环与一次性动画，
+   保留输入光标闪烁（用户明确要求与真实输入框一致） */
+@media (prefers-reduced-motion: reduce) {
+  .mini-finger,
+  .mini-finger--hint,
+  .mini-finger--tap,
+  .mini-finger--miss,
+  .key--hint,
+  .key--pressed,
+  .text-input .char.shake {
+    animation: none;
+    transition: none;
+  }
+}
+
 .train-keyboard canvas {
   width: 100%;
   height: auto;
@@ -1066,8 +1185,23 @@ th {
 }
 
 .key--pressed {
-  transform: scale(0.95);
-  transition: transform 80ms ease-in-out;
+  animation: key-press 255ms cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+/* DOM 版全键盘的按下反馈：下沉 + 收缩 + 回弹过冲，与 canvas 缩略键盘同口径 */
+@keyframes key-press {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  22% {
+    transform: translateY(3px) scale(0.94);
+  }
+  60% {
+    transform: translateY(-1px) scale(1.02);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
 }
 
 .key--layer {
