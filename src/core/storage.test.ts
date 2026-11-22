@@ -69,4 +69,30 @@ describe('UserProgress', () => {
     const user = storage.getCurrentUser();
     expect(user?.sessions).toHaveLength(1);
   });
+
+  it('key drill progress is per-user and persisted', () => {
+    const storage = new UserProgress();
+    storage.setKeyDrillProgress({ levelId: 'top-row', phases: { 'top-row': 2 } });
+    expect(storage.getKeyDrillProgress()).toEqual({ levelId: 'top-row', phases: { 'top-row': 2 } });
+    // 重建实例（模拟刷新）后仍在；切换到其他用户则互不串扰
+    const reloaded = new UserProgress();
+    expect(reloaded.getKeyDrillProgress().levelId).toBe('top-row');
+    const users = reloaded.getUsers();
+    reloaded.setCurrentUser(users[1].id);
+    expect(reloaded.getKeyDrillProgress()).toEqual({});
+    reloaded.setKeyDrillProgress({ levelId: 'home-row', phases: { 'home-row': 1 } });
+    reloaded.setCurrentUser(users[0].id);
+    expect(reloaded.getKeyDrillProgress().levelId).toBe('top-row');
+  });
+
+  it('migrates legacy users without keyDrill field', () => {
+    localStorage.setItem(
+      'typeprime_users',
+      JSON.stringify([{ id: 'u1', name: '旧用户', highScore: 0, totalGames: 0 }])
+    );
+    const storage = new UserProgress();
+    expect(storage.getKeyDrillProgress()).toEqual({});
+    storage.setKeyDrillProgress({ phases: { 'home-row': 1 } });
+    expect(storage.getKeyDrillProgress().phases).toEqual({ 'home-row': 1 });
+  });
 });

@@ -618,11 +618,11 @@ class App {
 
   /**
    * 切换用户时重置训练面板：丢弃进行中的练习并刷新预览，
-   * 避免上一位用户未完成练习的统计记入新用户。
-   * TrainPanel 未暴露公开重置方法，此处调用其内部重置实现。
+   * 避免上一位用户未完成练习的统计记入新用户；
+   * 同时重载新用户的键位练习层级/阶段记忆（按用户独立持久化）。
    */
   private resetTrainPanel(): void {
-    (this.trainPanel as unknown as { resetPractice(): void }).resetPractice();
+    this.trainPanel.reloadUserProgress();
   }
 
   /** 从词库面板发起「今日复习」：切换到训练面板并开始复习练习 */

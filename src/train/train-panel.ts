@@ -897,6 +897,8 @@ export class TrainPanel {
   private mode: PracticeMode = 'key-drill';
   private levelIndex = 0;
   private phaseIndex = 0;
+  /** 按层级 id 记忆的练习阶段下标（含薄弱键位专项）；随用户进度持久化 */
+  private phaseByLevel: Record<string, number> = {};
   /** 当前加载的预装文章在 PRESET_ARTICLES 中的索引；-1 表示用户粘贴的自定义文章 */
   private articleIndex = -1;
   /** 单词练习取词偏好（分类多选 + 难度范围），持久化到 localStorage */
@@ -917,6 +919,7 @@ export class TrainPanel {
   constructor(deps: TrainPanelDeps) {
     this.deps = deps;
     this.cacheDom();
+    this.loadKeyDrillProgress();
     this.motionEnabled = loadMotionEnabled();
     const canvas = document.getElementById('keyboard-ref');
     this.miniKeyboard = new MiniKeyboardCanvas(
@@ -963,6 +966,15 @@ export class TrainPanel {
     this.miniKeyboard.setVisible(visible && !this.statsActive);
   }
 
+  /** 切换用户后重载键位练习偏好并重置练习：每位用户独立记忆层级与阶段 */
+  reloadUserProgress(): void {
+    this.overrideLevel = null;
+    this.loadKeyDrillProgress();
+    this.syncLevelSelectorForOverride();
+    this.updatePhaseIndicator();
+    this.resetPractice();
+  }
+
   /** 切换键盘动画开关（按钮点击与 Ctrl+Shift+7 共用） */
   toggleMotion(): void {
     this.motionEnabled = !this.motionEnabled;
@@ -1002,10 +1014,13 @@ export class TrainPanel {
    */
   cycleLevel(delta: number): void {
     if (this.mode !== 'key-drill' || this.statsActive) return;
+    this.rememberPhase();
     this.overrideLevel = null;
     const count = TRAINING_LEVELS.length;
     this.levelIndex = (((this.levelIndex + delta) % count) + count) % count;
     this.levelSelector.value = TRAINING_LEVELS[this.levelIndex].id;
+    this.restorePhaseFor(this.currentLevel().id);
+    this.persistKeyDrillProgress();
     this.resetPractice();
   }
 
@@ -1017,6 +1032,8 @@ export class TrainPanel {
     if (this.mode !== 'key-drill' || this.statsActive) return;
     const count = DRILL_PHASES.length;
     this.phaseIndex = (((this.phaseIndex + delta) % count) + count) % count;
+    this.rememberPhase();
+    this.persistKeyDrillProgress();
     this.updatePhaseIndicator();
     this.resetPractice();
   }
@@ -1067,6 +1084,8 @@ export class TrainPanel {
       keys: valid,
       description: '来自错误分析的针对性练习',
     };
+    // 专项独立记忆阶段：首次从单键重复起步，不继承常规层级当前阶段
+    this.restorePhaseFor(WEAK_LEVEL_ID);
     this.resetPractice();
     this.startPractice();
     return true;
@@ -1225,7 +1244,12 @@ export class TrainPanel {
     if (this.mode === mode) {
       return;
     }
-    this.overrideLevel = null;
+    if (this.overrideLevel) {
+      // 离开专项前记忆其阶段，避免丢失
+      this.rememberPhase();
+      this.overrideLevel = null;
+      this.persistKeyDrillProgress();
+    }
     this.mode = mode;
     this.tabButtons.forEach((btn) => {
       btn.classList.toggle('active', btn.getAttribute('data-train-tab') === mode);
@@ -1234,6 +1258,10 @@ export class TrainPanel {
     this.phaseWrap.style.display = mode === 'key-drill' ? '' : 'none';
     this.wordSelectWrap.style.display = mode === 'word' ? '' : 'none';
     this.articleWrap.style.display = mode === 'article' ? '' : 'none';
+    if (mode === 'key-drill') {
+      // 回到键位练习：恢复常规层级记忆的阶段（而非专项遗留的阶段）
+      this.restorePhaseFor(this.currentLevel().id);
+    }
     this.resetPractice();
   }
 
@@ -1307,12 +1335,15 @@ export class TrainPanel {
     if (this.levelSelector.value === WEAK_LEVEL_ID) {
       return;
     }
+    this.rememberPhase();
     this.overrideLevel = null;
     const index = TRAINING_LEVELS.findIndex((l) => l.id === this.levelSelector.value);
     if (index < 0) {
       return;
     }
     this.levelIndex = index;
+    this.restorePhaseFor(this.currentLevel().id);
+    this.persistKeyDrillProgress();
     this.resetPractice();
   }
 
@@ -1589,16 +1620,21 @@ export class TrainPanel {
   private handleNext(): void {
     this.hideResultModal();
     if (this.mode === 'key-drill') {
-      // 先尝试进入下一阶段，若已在最后阶段则进入下一层级并重置阶段
+      // 先尝试进入下一阶段；已在最后阶段则进入下一层级，
+      // 阶段按目标层级记忆恢复（未练过从阶段 1 起步）
       if (this.phaseIndex < DRILL_PHASES.length - 1) {
         this.phaseIndex += 1;
+        this.rememberPhase();
         this.updatePhaseIndicator();
       } else if (this.levelIndex < TRAINING_LEVELS.length - 1) {
+        this.rememberPhase();
+        // 专项层级完成全部阶段后回归常规层级序列，不残留临时层级
+        this.overrideLevel = null;
         this.levelIndex += 1;
         this.levelSelector.value = TRAINING_LEVELS[this.levelIndex].id;
-        this.phaseIndex = 0;
-        this.updatePhaseIndicator();
+        this.restorePhaseFor(this.currentLevel().id);
       }
+      this.persistKeyDrillProgress();
     } else if (this.mode === 'article') {
       // 由浅入深：完成后自动加载下一篇预装文章（自定义文章则从库首开始）
       const next = nextPresetArticle(this.articleIndex);
@@ -2133,6 +2169,49 @@ export class TrainPanel {
     const phase = DRILL_PHASES[this.phaseIndex];
     this.phaseIndicator.textContent = `${phase.name}（${this.phaseIndex + 1}/${DRILL_PHASES.length}）`;
     this.phaseIndicator.title = phase.description;
+  }
+
+  // -------------------------------------------------------------------------
+  // 键位练习进度偏好：按层级记忆阶段，随用户持久化
+  // -------------------------------------------------------------------------
+
+  /** 从当前用户进度读取偏好：恢复层级与按层级记忆的阶段（脏数据兜底） */
+  private loadKeyDrillProgress(): void {
+    const stored = this.deps.progress.getKeyDrillProgress();
+    const phases: Record<string, number> = {};
+    for (const [id, idx] of Object.entries(stored.phases ?? {})) {
+      if (Number.isInteger(idx) && idx >= 0 && idx < DRILL_PHASES.length) {
+        phases[id] = idx;
+      }
+    }
+    this.phaseByLevel = phases;
+    const levelIdx = TRAINING_LEVELS.findIndex((l) => l.id === stored.levelId);
+    this.levelIndex = levelIdx >= 0 ? levelIdx : 0;
+    this.phaseIndex = phases[this.currentLevel().id] ?? 0;
+  }
+
+  /** 当前生效层级 id：薄弱键位专项临时层级优先 */
+  private effectiveLevelId(): string {
+    return this.overrideLevel?.id ?? this.currentLevel().id;
+  }
+
+  /** 记忆当前生效层级的阶段（仅更新内存映射，持久化由调用方统一触发） */
+  private rememberPhase(): void {
+    this.phaseByLevel[this.effectiveLevelId()] = this.phaseIndex;
+  }
+
+  /** 恢复指定层级记忆的阶段；未练过的层级从阶段 1 起步（新手友好） */
+  private restorePhaseFor(levelId: string): void {
+    this.phaseIndex = this.phaseByLevel[levelId] ?? 0;
+    this.updatePhaseIndicator();
+  }
+
+  /** 持久化层级与阶段记忆：levelId 只记常规层级，专项不覆盖上次常规进度 */
+  private persistKeyDrillProgress(): void {
+    this.deps.progress.setKeyDrillProgress({
+      levelId: this.currentLevel().id,
+      phases: { ...this.phaseByLevel },
+    });
   }
 
   /** PracticeMode -> TrainingSession.mode（word 练习归入 free 自由练习） */

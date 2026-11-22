@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TrainPanel } from './train-panel.js';
+import { TRAINING_LEVELS } from './train-engine.js';
 import { THEMES, alpha, type CanvasPalette } from '../render/theme.js';
 import type { TypingEngine } from '../core/input.js';
 import type { VocabularyBank, WordQueryOptions } from '../vocab/vocabulary.js';
 import type { UserProgress } from '../core/storage.js';
-import type { TypingEvent, WordEntry } from '../core/types.js';
+import type { KeyDrillProgress, TypingEvent, WordEntry } from '../core/types.js';
 
 /**
  * 构建 TrainPanel 所需的最小 DOM fixture（含 cacheDom 中 requireEl 的全部必需元素）。
@@ -160,6 +161,8 @@ function makeProgressStub(): UserProgress {
     getKeyStats: () => ({}),
     getWordStats: () => ({}),
     getCurrentUser: () => undefined,
+    getKeyDrillProgress: () => ({}),
+    setKeyDrillProgress: () => {},
   } as unknown as UserProgress;
 }
 
@@ -1039,5 +1042,178 @@ describe('TrainPanel 错误分析视图接线', () => {
     expect(recordKeyResult).toHaveBeenCalledWith('KeyD', true);
     // 全对练习不产生错误记录
     expect(recordKeyResult.mock.calls.some(([, ok]) => ok === false)).toBe(false);
+  });
+});
+
+describe('TrainPanel 按层级记忆练习阶段', () => {
+  /**共享持久化桩：模拟 UserProgress 的按用户存储，可整体换掉模拟切用户 */
+  let store: KeyDrillProgress;
+
+  beforeEach(() => {
+    localStorage.clear();
+    mountFixture();
+    store = {};
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  function mountPanel(): { feed: (event: TypingEvent) => void; panel: TrainPanel } {
+    let callback: ((e: TypingEvent) => void) | null = null;
+    const typingStub = {
+      on: (cb: (e: TypingEvent) => void) => {
+        callback = cb;
+        return () => {};
+      },
+      focus: () => {},
+    } as unknown as TypingEngine;
+    const panel = new TrainPanel({
+      typingEngine: typingStub,
+      keyboard: null,
+      vocabulary: makeVocabStub(),
+      progress: {
+        ...makeProgressStub(),
+        getKeyDrillProgress: () => store,
+        setKeyDrillProgress: (p: KeyDrillProgress) => {
+          store = p;
+        },
+      } as UserProgress,
+      currentUser: () => 'Tester',
+    });
+    return { feed: (event) => callback?.(event), panel };
+  }
+
+  const indicator = (): string => document.getElementById('phase-indicator')!.textContent ?? '';
+  const selector = (): HTMLSelectElement =>
+    document.getElementById('level-selector') as HTMLSelectElement;
+
+  /** 逐字符敲完当前目标文本完成练习（显示用空格为 nbsp，需还原） */
+  function completeCurrent(feed: (event: TypingEvent) => void): void {
+    const chars = [...document.querySelectorAll('#text-target .char')].map(
+      (el) => el.textContent ?? ''
+    );
+    expect(chars.length).toBeGreaterThan(0);
+    for (const c of chars) {
+      feed(char(c === '\u00a0' ? ' ' : c));
+    }
+  }
+
+  it('cycleLevel 恢复目标层级记忆的阶段，未练过的层级从阶段 1 起步', () => {
+    const { panel } = mountPanel();
+    panel.cyclePhase(1);
+    panel.cyclePhase(1); // 层级 0 → 阶段 3
+    expect(indicator()).toContain('3/3');
+    panel.cycleLevel(1); // 层级 1 未练过 → 阶段 1
+    expect(indicator()).toContain('1/3');
+    panel.cyclePhase(1); // 层级 1 → 阶段 2
+    panel.cycleLevel(-1); // 回层级 0 → 恢复阶段 3
+    expect(indicator()).toContain('3/3');
+    panel.cycleLevel(1); // 层级 1 → 恢复阶段 2
+    expect(indicator()).toContain('2/3');
+  });
+
+  it('下拉切层级同样按层级恢复阶段并持久化', () => {
+    const { panel } = mountPanel();
+    panel.cyclePhase(1); // 层级 0 → 阶段 2
+    selector().value = TRAINING_LEVELS[2].id;
+    selector().dispatchEvent(new Event('change'));
+    expect(indicator()).toContain('1/3');
+    expect(store.levelId).toBe(TRAINING_LEVELS[2].id);
+    expect(store.phases?.[TRAINING_LEVELS[0].id]).toBe(1);
+  });
+
+  it('重建面板（模拟刷新）恢复上次的层级与阶段', () => {
+    const { panel } = mountPanel();
+    panel.cycleLevel(1);
+    panel.cyclePhase(1);
+    panel.cyclePhase(1); // 层级 1 → 阶段 3
+    panel.destroy();
+    mountFixture();
+    mountPanel();
+    expect(selector().value).toBe(TRAINING_LEVELS[1].id);
+    expect(indicator()).toContain('3/3');
+  });
+
+  it('脏数据兜底：越界/非整数阶段与未知层级被忽略', () => {
+    store = {
+      levelId: 'bogus',
+      phases: {
+        [TRAINING_LEVELS[0].id]: 9,
+        [TRAINING_LEVELS[1].id]: 1.5,
+        [TRAINING_LEVELS[2].id]: 1,
+      },
+    };
+    const { panel } = mountPanel();
+    expect(selector().value).toBe(TRAINING_LEVELS[0].id);
+    expect(indicator()).toContain('1/3');
+    panel.cycleLevel(1); // 1.5 被丢弃 → 阶段 1
+    expect(indicator()).toContain('1/3');
+    panel.cycleLevel(1); // 合法记忆 → 阶段 2
+    expect(indicator()).toContain('2/3');
+  });
+
+  it('薄弱键位专项独立记忆阶段：首次从阶段 1 起步，离开再回恢复', () => {
+    const { panel } = mountPanel();
+    panel.cyclePhase(1);
+    panel.cyclePhase(1); // 常规层级 0 → 阶段 3
+    panel.startWeakKeyDrill(['a']);
+    expect(indicator()).toContain('1/3'); // 专项不继承阶段 3
+    panel.cyclePhase(1); // 专项 → 阶段 2
+    panel.cycleLevel(1); // 离开专项 → 常规层级 1 阶段 1
+    expect(indicator()).toContain('1/3');
+    expect(selector().querySelector('option[value="weak-keys"]')).toBeNull();
+    panel.startWeakKeyDrill(['a']); // 再入专项 → 恢复阶段 2
+    expect(indicator()).toContain('2/3');
+  });
+
+  it('专项经单词模式往返回到键位练习时恢复常规层级阶段', () => {
+    const { panel } = mountPanel();
+    panel.cyclePhase(1); // 常规层级 0 → 阶段 2
+    panel.startWeakKeyDrill(['a']);
+    panel.cyclePhase(1);
+    panel.cyclePhase(1); // 专项 → 阶段 3
+    (document.querySelector('[data-train-tab="word"]') as HTMLElement).click();
+    (document.querySelector('[data-train-tab="key-drill"]') as HTMLElement).click();
+    expect(indicator()).toContain('2/3');
+  });
+
+  it('下一关跨层级时恢复目标层级记忆的阶段', () => {
+    const { feed, panel } = mountPanel();
+    panel.cyclePhase(1);
+    panel.cyclePhase(1); // 层级 0 → 阶段 3（最后阶段）
+    feed({ type: 'submit' });
+    completeCurrent(feed);
+    feed({ type: 'submit' }); // 下一关 → 层级 1
+    expect(selector().value).toBe(TRAINING_LEVELS[1].id);
+    expect(indicator()).toContain('1/3');
+    expect(store.phases?.[TRAINING_LEVELS[0].id]).toBe(2);
+  });
+
+  it('专项完成全部阶段后下一关回归常规层级序列', () => {
+    const { feed, panel } = mountPanel();
+    panel.startWeakKeyDrill(['a']);
+    panel.cyclePhase(1);
+    panel.cyclePhase(1); // 专项 → 阶段 3（cyclePhase 重置引擎，需重新开始）
+    feed({ type: 'submit' });
+    completeCurrent(feed);
+    feed({ type: 'submit' });
+    expect(selector().value).toBe(TRAINING_LEVELS[1].id);
+    expect(selector().querySelector('option[value="weak-keys"]')).toBeNull();
+    expect(indicator()).toContain('1/3');
+  });
+
+  it('reloadUserProgress 按用户重载层级/阶段记忆', () => {
+    const { panel } = mountPanel();
+    panel.cycleLevel(1);
+    panel.cyclePhase(1); // 用户 A：层级 1 阶段 2
+    store = {}; // 模拟切到无记忆的新用户
+    panel.reloadUserProgress();
+    expect(selector().value).toBe(TRAINING_LEVELS[0].id);
+    expect(indicator()).toContain('1/3');
+    store = { levelId: TRAINING_LEVELS[1].id, phases: { [TRAINING_LEVELS[1].id]: 1 } };
+    panel.reloadUserProgress(); // 切回用户 A
+    expect(selector().value).toBe(TRAINING_LEVELS[1].id);
+    expect(indicator()).toContain('2/3');
   });
 });

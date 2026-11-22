@@ -379,6 +379,18 @@ type-prime/
 - 浏览器 no-store 实测：空态 → 练习 → 热力（A 键 25% / --heat 0.5）→ 点击键帽专项 → 薄弱按钮 → 三主题换肤 → 切面板状态保持 → F1 帮助 → 900px 单列响应式；易错词闭环（敲错不回退 → 列表行 → 单行复习 / 复习全部 → 视图切换）；全程控制台零报错。
 - 未采取方案：把错误分析做成第四种 PracticeMode（污染 sessionMode/引擎状态）、JS 监听主题换色（CSS 变量已自动换肤）、每次 refresh 重建键帽 DOM（监听器叠加）。
 
+#### 8. 键位练习按层级记忆练习阶段（已实现）
+
+目标：修复「切换练习层级携带旧阶段，初学者大概率直接跳到阶段 3」的问题，并举一反三治理同族状态丢失/串扰。
+
+- 数据模型：`src/core/types.ts` 新增 `KeyDrillProgress`（`levelId` 最近常规层级 + `phases` 层级 id → 阶段下标），`UserProgressData.keyDrill?` 可选兼容旧数据；`src/core/storage.ts` migrate 补 `{}`、默认用户与 addUser 初始化 `{}`，新增 `getKeyDrillProgress()/setKeyDrillProgress()`（按用户隔离持久化）。
+- 面板状态：`src/train/train-panel.ts` 新增 `phaseByLevel` 内存表与 `loadKeyDrillProgress()`（脏数据兜底：仅接受 [0,3) 整数阶段，未知 levelId 回退首层级）；`rememberPhase/restorePhaseFor/persistKeyDrillProgress` 三个 helper 统一「记住 → 切换 → 恢复 → 持久化」口径；未练过的层级一律从阶段 1 起步。
+- 接线点：`cycleLevel` / `handleLevelChange` / `cyclePhase` / `handleNext` / `switchMode` / `startWeakKeyDrill` 全部接入；「下一关」跨层级恢复目标层级记忆阶段并清除专项 override（修复专项下悄悄推进常规层级的隐患）；薄弱键位专项独立记忆阶段（默认阶段 1，不继承常规阶段），经单词模式往返回到键位练习时恢复常规层级阶段。
+- 切用户：`main.resetTrainPanel` 改调公开 `reloadUserProgress()`（清 override + 重载该用户层级/阶段记忆 + 重置练习），取代旧的 cast 调 resetPractice，练习进度不再跨用户串扰。
+- 已审计无需改：wordPref/motion/theme/game settings 均已持久化；文章选择属内容选择非难度递进，保持现状。
+- 测试：`train-panel.test.ts` 新增「按层级记忆练习阶段」9 例 + `storage.test.ts` 2 例（按用户持久化 / 旧数据迁移）；基线 20 文件 337 例全绿，`build:release` 207.1 KB。
+- 浏览器 no-store 实测：切层级阶段不跳 3、未练层级从阶段 1、各层级独立记忆、刷新持久化（localStorage keyDrill 结构核对）、单词模式往返、切用户隔离，全程控制台零报错。
+
 ### 块二：单词记忆与词库管理（高优先级）
 
 目标：搭建词库体系与记忆曲线复习机制，单词记忆通过“用指法输入单词”完成。

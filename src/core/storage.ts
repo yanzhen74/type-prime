@@ -6,6 +6,7 @@ import type {
   TrainingSession,
   GameSession,
   MasteryLevel,
+  KeyDrillProgress,
 } from './types.js';
 
 const STORAGE_KEY = 'typeprime_users';
@@ -48,6 +49,7 @@ export class UserProgress {
       keyStats: progress.keyStats ?? {},
       wordStats: progress.wordStats ?? {},
       sessions: progress.sessions ?? [],
+      keyDrill: progress.keyDrill ?? {},
     };
   }
 
@@ -61,6 +63,7 @@ export class UserProgress {
         keyStats: {},
         wordStats: {},
         sessions: [],
+        keyDrill: {},
       },
       {
         id: 'u2',
@@ -70,6 +73,7 @@ export class UserProgress {
         keyStats: {},
         wordStats: {},
         sessions: [],
+        keyDrill: {},
       },
       {
         id: 'u3',
@@ -79,6 +83,7 @@ export class UserProgress {
         keyStats: {},
         wordStats: {},
         sessions: [],
+        keyDrill: {},
       },
     ];
     localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
@@ -109,6 +114,7 @@ export class UserProgress {
       keyStats: {},
       wordStats: {},
       sessions: [],
+      keyDrill: {},
     };
     this.users.push(user);
     this.save();
@@ -160,6 +166,19 @@ export class UserProgress {
     const user = this.getCurrentUser();
     if (!user) return;
     user.sessions.push(session);
+    this.save();
+  }
+
+  /** 读取当前用户的键位练习进度偏好（无数据时返回空对象） */
+  getKeyDrillProgress(): KeyDrillProgress {
+    return this.getCurrentUser()?.keyDrill ?? {};
+  }
+
+  /** 写入当前用户的键位练习进度偏好（整体替换，随用户数据持久化） */
+  setKeyDrillProgress(progress: KeyDrillProgress): void {
+    const user = this.getCurrentUser();
+    if (!user) return;
+    user.keyDrill = progress;
     this.save();
   }
 

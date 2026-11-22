@@ -228,6 +228,16 @@ export interface UserProgressData extends User {
   keyStats: Record<string, KeyStats>;
   wordStats: Record<string, WordStats>;
   sessions: (TrainingSession | GameSession)[];
+  /** 键位练习进度偏好（可选，兼容旧数据）：按层级记忆练习阶段 */
+  keyDrill?: KeyDrillProgress;
+}
+
+/** 键位练习进度偏好：层级与阶段按用户持久化，切层级/刷新/切用户不丢失 */
+export interface KeyDrillProgress {
+  /** 最近一次常规练习层级 id（不含薄弱键位专项临时层级） */
+  levelId?: string;
+  /** 各层级 id → 阶段下标（0 起；缺失视为从阶段 1 起步） */
+  phases?: Record<string, number>;
 }
 
 /** 练习层级定义 */
