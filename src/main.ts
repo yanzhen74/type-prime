@@ -135,6 +135,8 @@ class App {
       review: this.review,
       currentUser: () => this.storage.getCurrentUser()?.name ?? 'Guest',
       getPalette: this.theme.provider(),
+      onStartReview: (wordIds) => this.startReview(wordIds),
+      onStartKeyDrill: (keys) => this.startKeyDrill(keys),
     });
     this.vocabPanel = new VocabPanel({
       vocabulary: this.vocabulary,
@@ -235,6 +237,12 @@ class App {
     const wordSelect = document.getElementById('train-word-select');
     wordSelect?.addEventListener('focusin', () => this.suspendTrainInput());
     wordSelect?.addEventListener('focusout', () => this.releaseUserControlFocus());
+
+    // 错误分析视图焦点保护：热力图键帽/复习按钮均为动态生成，
+    // 同样用 focusin/focusout 委托到容器（与词库选择控件同理）。
+    const statsView = document.getElementById('train-stats-view');
+    statsView?.addEventListener('focusin', () => this.suspendTrainInput());
+    statsView?.addEventListener('focusout', () => this.releaseUserControlFocus());
   }
 
   /**
@@ -623,6 +631,15 @@ class App {
     const started = this.trainPanel.startReview(wordIds);
     if (!started) {
       void this.alertUser('没有可复习的单词。', '今日复习');
+    }
+  }
+
+  /** 从错误分析发起薄弱键位专项：先恢复隐藏输入框（焦点保护可能已将其禁用）再进练习 */
+  private startKeyDrill(keys: string[]): void {
+    this.switchTab('train');
+    const started = this.trainPanel.startWeakKeyDrill(keys);
+    if (!started) {
+      void this.alertUser('没有可练习的薄弱键位。', '薄弱键位专项');
     }
   }
 

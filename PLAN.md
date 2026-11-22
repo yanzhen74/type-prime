@@ -357,12 +357,27 @@ type-prime/
 #### 5. 统计与持久化
 
 - 练习结果写入 `UserProgress`：`recordKeyResult`、`recordWordResult`、`recordSession`。
-- 生成错误键位热力图与易错词列表。
+- 生成错误键位热力图与易错词列表（已实现，见块一 §7「错误分析视图」）。
 
 #### 6. 测试
 
 - `TrainEngine` 序列生成、正误判定、事件派发测试。
 - 键盘 `hintNext` 与动画测试。
+
+#### 7. 错误分析视图（热力图 + 易错词 + 推荐练习）（已实现）
+
+目标：把 §3.1 需求的「错误热力图 / 易错词列表 + 针对性强化」落地为训练面板第四个子标签「错误分析」（`Ctrl+Shift+4`，按 `e.code === 'Digit4'` 判定），形成「练习 → 统计 → 推荐练习 → 回写统计」闭环。
+
+- 模块拆分：`src/train/error-stats.ts` 纯函数聚合层（`buildKeyHeat` / `summarizeKeys` / `weakKeyCodes` / `topErrorWords` / `drillCharOf`，常量 `MIN_SAMPLE=5` / `FULL_HEAT_RATE=0.5` / `WEAK_KEY_LIMIT=6` / `ERROR_WORD_LIMIT=10`）+ `src/train/stats-view.ts` DOM 控制器 `TrainStatsView`（deps 注入 rows/progress/vocabulary/onDrillKeys/onReviewWords，循 VocabPanel 模式）。视图不是练习模式，不进 `PracticeMode`；TrainPanel 以独立 `statsActive` 状态门控输入与快捷键（字符/Enter/Esc/Ctrl+方向键/Tab 均不转发）。
+- 数据分母修复：历史 keyStats 只累计错误（correct 恒 0），`handleComplete` 新增按最终 charResults 补记正确击键（退格修正后判对计正确、换行剔除），使错误率 = wrong/(correct+wrong)；兼容历史 only-wrong 数据（低样本阻尼避免视觉失真）。
+- 热力模型：errorRate 按 50% 满档映射 `--heat` 强度，乘低样本阻尼 min(1, attempts/5)；attempts≥5 且零错误判为已练熟（绿色 tint）。热力键盘复用 MINI_ROWS 布局（48 键），宽键按 width/44 放大，roving tabindex + 方向键漫游保全键盘操作；颜色走 `--danger-rgb/--success-rgb` 的 rgba 半透明 tint，三主题自动换肤、零 JS 主题监听。
+- 推荐练习闭环：点击键帽 / 「练习薄弱键位」按钮 → `startWeakKeyDrill(keys)` 构造临时 TrainingLevel（id=weak-keys）复用 `generateKeyDrill` 三阶段序列与层级高亮，层级下拉动态插入「薄弱键位专项」选项、切常规层级即清除；易错词行 / 「复习全部易错词」→ `main.startReview` 复用 SM-2 回写链路。`startReview` 须显式 `exitStatsView()`（mode 已是 word 时不走 switchMode，浏览器实测发现的回归，已补单测）。
+- 焦点保护：`#train-stats-view` 委托 focusin/focusout 到 suspendTrainInput/releaseUserControlFocus；exitStatsView 对正在聚焦的统计控件主动 blur 触发释放，避免隐藏输入框保持 disabled。
+- UI：概览 chips（总击键/错误/正确率/覆盖键位）、热力图例、易错词表（单词/释义/错误/练习/错误率/掌握度徽章/复习）、最近练习（模式徽章 + 正确率 + WPM 或分数 + 时间，复用 sessions）；空态引导文案；全部用户数据走 textContent 渲染。
+- 测试：`error-stats.test.ts` 13 例 + `stats-view.test.ts` 10 例 + `train-panel.test.ts` 接线 7 例（含 startReview 退出回归）；基线 20 文件 326 例全绿，`build:release` 205.5 KB。
+- jsdom 噪声源头静音：Vitest 的 console 拦截在 worker 初始化时捕获原始 console，绕过 setup 里的 console.error 覆写 → `vitest.setup.ts` 改为原型级 `HTMLCanvasElement.prototype.getContext` 返回 null（与未安装 canvas 包语义一致，实例级录制 ctx 不受影响），取代 §10.4.5 时期的 console 过滤方案。
+- 浏览器 no-store 实测：空态 → 练习 → 热力（A 键 25% / --heat 0.5）→ 点击键帽专项 → 薄弱按钮 → 三主题换肤 → 切面板状态保持 → F1 帮助 → 900px 单列响应式；易错词闭环（敲错不回退 → 列表行 → 单行复习 / 复习全部 → 视图切换）；全程控制台零报错。
+- 未采取方案：把错误分析做成第四种 PracticeMode（污染 sessionMode/引擎状态）、JS 监听主题换色（CSS 变量已自动换肤）、每次 refresh 重建键帽 DOM（监听器叠加）。
 
 ### 块二：单词记忆与词库管理（高优先级）
 
@@ -475,7 +490,7 @@ type-prime/
 - 基类接线：`GameEngine` 新增 `protected readonly layers`，`redraw()` 先 `layers.invalidate()` 再 `draw()`；新增 `protected beginFrame(paintStatic?)` 以 `this.getPalette()` 为缓存指纹。三个游戏各拆出 `drawBackground(ctx, pal)`（掉落/射击为双向网格，僵尸为竖向网格 + 基地线）；僵尸「基地血量」文字属动态 HUD 保留在主画布。
 - 缩略键盘接线：`MiniKeyboardCanvas` 板面底色 + 全部键座入静态缓存，涟漪 → 键帽每帧动态；`redraw()` 先 invalidate 保主题切换即时生效。
 - 测试：`layered-canvas.test.ts` 9 例（底座 7：首帧重绘/blit、多帧命中、指纹/尺寸/invalidate 失效、降级、无 ctx 抛错；基类接线 2：同主题多帧静态层只绘一次、换主题与 redraw 都重绘）；`train-panel.test.ts` +2 例（板面/键座只绘一次且呼吸帧只 blit、redraw 作废缓存）。注意：离屏支持探针是模块级一次性缓存，接管 `createElement` 的 describe 必须在该文件最先执行。
-- jsdom 噪声治理：`vitest.setup.ts` 在 worker 内过滤 `console.error` 的 `Not implemented:` 转发（VirtualConsole 实例含函数，无法经 environmentOptions 序列化进 forks worker；jsdom 29 的 API 为 `forwardTo(console, { jsdomErrors })`，旧 `sendTo` 已移除）。
+- jsdom 噪声治理：`vitest.setup.ts` 在 worker 内过滤 `console.error` 的 `Not implemented:` 转发（VirtualConsole 实例含函数，无法经 environmentOptions 序列化进 forks worker；jsdom 29 的 API 为 `forwardTo(console, { jsdomErrors })`，旧 `sendTo` 已移除）。后续错误分析批次发现 Vitest console 拦截会绕过该覆写，已改为原型级 `getContext` 返回 null 的源头静音（见块一 §7）。
 - 验证：基线 18 文件 293 例全绿，`build:release` 183.6 KB；浏览器 no-store 实测（探针计数 ctx 调用）：游戏每帧 drawImage 1 次（≈48/s），stroke 从分层前 40+/帧降至 1–3/帧；缩略键盘呼吸帧只 blit；三模式可玩、三主题切换即时重绘、切面板停循环/恢复、全局面板控制台零报错。
 - 未采取方案：多张 canvas DOM 堆叠（改 DOM/CSS、层级与焦点复杂化、探针测试重写）、每帧全量重绘静态层（分层前原状，网格描边浪费）、WebGL/PixiJS 迁移（留作独立评估项，不属本次范围）。
 
@@ -750,3 +765,131 @@ type-prime/
 - **回滚策略**：每个功能块独立提交（commit），出现问题可单独回退。
 - **性能保护**：新增对象（僵尸、目标、粒子）使用对象池；Canvas 渲染按层绘制，避免全屏重绘。
 - **键盘覆盖**：`TypingEngine` 的字符事件须覆盖标准全尺寸键盘的字母、数字、符号与空格，功能键通过 `keydown` 处理。
+
+---
+
+## 14. 扩展游戏：坦克大战（Ctrl+5 新顶级面板）
+
+> **⚠ 本节 14.1–14.6 已失效，仅作废弃方案存档，禁止照此实现。**
+>
+> 失效原因：本节建立在「打字是唯一交互 → 坦克不能动」的错误前提上。实际上**方向键完全空闲**（`TypingEngine` 只分发字符/退格/提交/Esc，裸 ↑↓←→ 无任何业务语义，仅 Ctrl+方向键被游戏面板占用），原版坦克大战的方向键操作手感可直接照搬。
+>
+> 用户重新定义的方向（**原汁原味复刻坦克大战的灵魂**）：地图与可破坏地形、敌方坦克 AI、**大本营防守**、双方炮弹对轰（原版机制）、**我方坦克必须能到处跑**、AI 决策优先消灭最具威胁的敌人，**打字退化为游戏属性之一**（不再是唯一交互）——这才是 `extra` 扩展面板的含义。护盾也回归原版口径（Helmet 道具型临时无敌 + 出生保护），而不是本节设计的常驻层数。
+>
+> 当前状态：**需求敲定期，未开始任何落地**；需求敲定后本节将整体重写。
+
+### 14.1 决策记录
+
+| 候选         | 结论     | 理由                                                                                                                                                     |
+| ------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 舒尔特专注力 | **放弃** | 与本项目主线无关：格子里放单词后，盲打输入与「文章练习」的训练效果没有实质区别，只是排版形态变化，不构成新能力。                                         |
+| 坦克大战     | **保留** | 与既有三种模式（单词掉落 / 闯关射击 / 僵尸大战）有明确区分度：敌方会向玩家开火、炮弹可对消、玩家有护盾，压力源从「目标掉到底部」变为「玩家自身被瞄准」。 |
+
+补充结论：坦克的移动**不引入手动方向键，且玩家坦克静止不动**。字母键全部归 `TypingEngine` 所有，WASD 式移动与打字输入天然互斥，且当前快捷键命名空间已拥挤。炮塔自动转向锁定目标，玩家的全部交互只有打字。
+
+“静止”而非“自动巡航”的理由（用户拍板）：炮塔已自动瞄准、玩家又无法控制方向时，巡航不产生任何决策价值，只是装饰，还会让敌炮弹的命中判定变得随机，玩家会把“没道理的掉血”误判为 bug。静止后命中判定完全确定，**对消成为玩家唯一的主动防御手段**，机制反而更硬。被否决的备选：① 修饰键按住切换行驶/打字模式——与项目「Web 全局快捷键避开修饰键单字母」既有决策冲突；② 打字驱动移动 + 标点键走位——认知负担大且污染打字节奏；③ 击毁触发规避机动——与“静止”方案互斥，已舍。
+
+### 14.2 玩法规格
+
+**战场布局**
+
+- 玩家坦克**固定在战场底部中央，完全不移动**（无巡航、无规避），成为敌方炮弹的确定靶点。
+- 敌方坦克从上方多路推进，每辆携带一个单词标签。
+- 炮塔**自动转向**当前锁定的敌坦克，玩家无需瞄准。
+- 静止带来的几何红利：我方炮弹（玩家→敌坦克）与敌炮弹（敌坦克→玩家）**天然处于同一条连线上、相向而行**。只要玩家打的是「刚刚开火的那辆」，两发炮弹就会迎头相遇并自动对消；打其他坦克则拦不住。这就是本模式的决策层，也是它区别于闯关射击的核心。
+
+**打字开炮**
+
+- 输入敌坦克上的单词，逐字符命中即积累进度；输完即发射一发炮弹飞向该坦克，命中扣血/击毁。
+- 锁定规则沿用闯关射击：以当前输入前缀匹配首个敌坦克；`expectedChar()` 按锁定的坦克下标覆写，保证含空格短语可打完（遵循基类双语义路由约定）。
+- 敌坦克推进速度须乘 `lengthSpeedFactor(text)`，避免长单词在数值上不可能完成。
+
+**炮弹对消（核心差异化）**
+
+- 敌方坦克周期性向我方坦克发射炮弹（开火前须有预警：炮口闪光/充能提示，让玩家来得及把打字目标切到该坦克）。
+- 我方炮弹与敌方炮弹每帧做圆形碰撞检测（半径阈值初始 12px，可调）；一旦相遇则**双双湮灭**，生成爆炸粒子并计入 `interceptions`。因两者共线相向，相对速度为二者之和，对消必须按「连续扫过」判定（用上一帧到本帧的线段距离或适当放大半径），否则高速下会穿透漏判。
+- 由此产生决策层：打字优先级不再是「离玩家最近」，而是「威胁最大（正在开火 / 炮弹已在途）」。对消成功须有飘字与音效反馈，否则机制不可感知。
+- **可拦截性不变量**（必须像 `lengthSpeedFactor` 那样当公式治理）：从开火预警到敌炮弹抵达的飞行时长，必须 ≥ 「切目标并输完当前档位一个词」所需时长；否则对消在数值上不可能完成，重蹈“长句永远打不完”的覆辙。实现时用纯函数 `computeShellFlightTime(level)` 与各档词长估算对比，并在单测中断言该不等式；切目标丢进度的代价（是否允许无损切换）是该不等式的可调变量。
+
+**护盾**
+
+- 玩家初始 `shield = 3`（上限 3）。
+- 敌炮弹未被对消并抵达玩家坦克 → **扣 1 层护盾**（不直接扣生命）；护盾为 0 后再被击中才扣 `lives`。
+- 回补途径：连续对消 N 发炮弹（初始 N=3）或击毁敌坦克掉落，均回补 1 层，不超过上限。**因为坦克不能规避，护盾与对消是仅有两层防御，回补速率必须与敌方开火频率配对调平**，否则会退化成纯计时失败。
+- 表现为环绕坦克的弧形护盾环，画在分层渲染的 dynamic 层；破盾瞬间需有闪烁与音效。
+
+**单词内容源（已定：内置分档词表）**
+
+- 沿用闯关射击的 `SHOOTER_CONTENT` 结构，新建 `TANK_CONTENT`，按 `letter` / `combo` / `simple` / `complex` / `phrase` / `boss` 分档，随关卡升级切档（复用 `contentKindForLevel` 口径）。
+- **不接 VocabularyBank 词库词源**：零外部依赖、词长可控、公式可直接单测，与 shooter / zombie 口径一致；也避免改 `syncWordSourceDisabled` 的排除式判据。词源类控件在扩展面板不出现。
+
+**难度与关卡（沿用关卡目标制）**
+
+- 不用无尽升级：每关需击毁 X 辆坦克通关；升关提高推进速度、开火频率与单词长度档位。
+- 起始 `lives = 3`，升关回补 1 命；累计通关 10 关判定胜利并弹通关遮罩（与单词掉落口径一致）。
+
+### 14.3 接入方案
+
+**新顶级面板**
+
+- 面板 id：`extra`，标题暂定「扩展游戏」，位于排行榜之后，快捷键 **Ctrl+5**。
+- 触点：`main.ts` 的 `panelMap` 加 `'5': 'extra'`；`index.html` 加 tab 按钮（含 `<kbd>Ctrl+5</kbd>` 标注）与 `<section id="panel-extra" class="panel">`；F1 帮助弹窗与 kbd 文案同步（历史教训：提示与行为不一致会让用户无法分辨按键归属）。
+- Ctrl+5 会被浏览器用于切换标签页，须 `preventDefault() + stopPropagation()` 接管，与 Ctrl+1~4 同一模式。
+
+**面板内部游戏选择**
+
+- 下拉 `#extra-game-mode`，当前仅 `'tank'` 一项，为后续扩展游戏预留。
+- 快捷键 Ctrl+Shift+1，判定用 `e.code === 'Digit1'`（布局无关，遵循既有约定，不用 `e.key`）。
+- 下拉控件须套用 `suspend/disabled` 焦点保护模式（focus 时禁用隐藏输入框、blur 时恢复，且重聚焦判断放进 `setTimeout` 回调内再检查控制标志）。
+
+**输入与实例隔离**
+
+- 扩展面板使用**独立的隐藏输入框** `#extra-game-input` 与**独立的实例字段** `extraGame`，不复用游戏面板的 `#game-input` / `game` 字段与 `createGame` 工厂——否则两个面板的模式切换会互相触发重建。
+- `extraGame` 字段按项目惯例声明为**具体子类联合类型**（当前只有 `TankBattleGame`），不要抽成 `GameEngine<GameBaseState>` 基类引用（`onUpdate` 私有字段使泛型参数处于不变位，会报不可赋值）。
+- `switchTab` 须扩成**三方焦点互斥**：切离训练面板 suspend `#train-input`、切离游戏面板 suspend `#game-input`、切离扩展面板 suspend `#extra-game-input`。TypingEngine 的 blur 自动重聚焦会与任何持有焦点的控件争抢，这是项目已踩过两次的雷。
+
+**统计与设置**
+
+- `TankState` 补 `correctChars` 计数字段，`computeAccuracy` 按字段存在性走精确分支（与 ShooterState 同口径），不在基类强加通用字段。
+- 会话记录沿用 `UserProgress.recordSession`，新增游戏模式标识 `'tank'`；排行榜展示需为该模式单列（其成绩含义与掉落类不同）。
+- 设置持久化到新键 `typeprime_extra_game_settings`（统一 `typeprime_` 前缀）；读写两侧都要做模式值合法性校验，否则刷新后会被判非法回落默认值。
+- 仅对单一模式有效的控件须实现「按模式禁用」逻辑；词源类控件对坦克大战无意义。
+
+**复用清单**
+
+- `GameEngine` 基类：Canvas 初始化、循环、暂停、`layers` + `beginFrame(paintStatic?)` 分层渲染、`handleChar` / `handleBackspace` / `submitWord`。
+- `lengthSpeedFactor`：敌坦克推进速度补偿。
+- `sound-manager`：GameSfx 分层钩子新增 `fire` / `hit` / `intercept` / `shieldBreak`；开关切换不得重建实例。
+- `particle-system`：对消爆炸、破盾碎片。
+- `theme`：`getPalette()` 调色板；palette 对象引用即离屏缓存指纹，改主题须触发 `redraw()` 先 invalidate。
+
+### 14.4 类型与模块清单
+
+| 文件                                 | 内容                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/core/types.ts`                  | 新增 `TankKind`、`EnemyTank`、`TankShell`、`TankState extends GameBaseState`。**新增独立 `TankShell` 而非复用僵尸的 `Projectile`**，避免污染既有语义。                                                                                                                                                                        |
+| `src/games/tank-battle-game.ts`      | `export class TankBattleGame extends GameEngine<TankState>`，构造签名对齐同族位置参数；导出 `TANK_CONTENT` 分档词表与纯函数 `computeTankAdvanceSpeed` / `computeTankSpawnInterval` / `computeEnemyFireInterval` / `computeInterceptRadius` / `computeShieldRegenThreshold` / `computeShellFlightTime`，便于脱离 Canvas 单测。 |
+| `src/games/tank-battle-game.test.ts` | 测试子类放宽 `spawn` / `update` 可见性以驱动，rng 注入确定性。覆盖：对消碰撞判定（含高速穿透回归）、可拦截性不等式、护盾扣减与回补上限、破盾转扣命、关卡通关与胜利、`frameNow` 计时一致性。                                                                                                                                   |
+| `index.html`                         | 新 tab 按钮、`#panel-extra`、canvas、`#extra-game-mode`、`#extra-game-input`、kbd 标注。                                                                                                                                                                                                                                      |
+| `src/main.ts`                        | import、`extraGame` 字段、`panelMap` 加 `'5'`、`switchTab` 三方互斥、Ctrl+5 / Ctrl+Shift+1 快捷键、设置读写与校验、统计接线。                                                                                                                                                                                                 |
+| `style.css`                          | 沿用 CSS 变量与 `.panel` / `.tab-btn` / `.btn` 组件类，不引入新样式体系。                                                                                                                                                                                                                                                     |
+
+**帧内计时约束**（历史踩坑）：`update(now)` 驱动的所有实体时间戳、dt 计算、TTL 比较一律使用注入的 `now` 并缓存为 `frameNow`，禁止混用 `performance.now()`；dt 哨兵初值必须是 `-1`；`onResume` 须重置 `lastUpdateAt`，否则暂停恢复后大 dt 造成实体瞬移。
+
+### 14.5 实施步骤
+
+1. **类型与公式层**：`types.ts` 扩展 + 坦克难度/开火/对消纯函数 + 公式单测（不接 UI）。
+2. **核心循环**：静态玩家坦克与自动炮塔、敌坦克生成与推进、锁定与打字开炮、炮弹飞行与命中。
+3. **差异化机制**：敌方开火 + 炮弹对消 + 护盾扣减/回补 + 粒子与音效接线。
+4. **面板接入**：Ctrl+5 tab、独立隐藏输入框、下拉与 Ctrl+Shift+1、三方焦点互斥。
+5. **统计与设置**：`correctChars` 精确统计、`recordSession`、排行榜展示、设置持久化与校验。
+6. **收尾**：文档同步（PLAN / PROGRESS / README）→ `npm run format` → `lint && test && build` → 本地 no-store 服务器浏览器验证。
+
+### 14.6 风险控制
+
+- **焦点互抢**：独立输入框 + suspend 保护 + `disabled` 阻断程序化聚焦（disabled 元素无法被聚焦，是切断 focus/blur 死循环的关键手段）。
+- **对消机制不可感知**：碰撞阈值与敌方开火频率均设为可调常量；对消成功必须同时有粒子、飘字与音效三重反馈；预警不足会让玩家误以为是随机掉血。
+- **与闯关射击同质化**：敌方开火 + 对消 + 护盾必须是一级机制而非装饰，若实现中退化掉这三点，坦克大战就只是射击的换皮，应回炉。
+- **对消高速穿透**：炮弹相向而行时相对速度大，单帧点距检测会漏判；必须用线段扫过判定或按相对速度放大碰撞半径，并用合成时间单测锁定该行为。
+- **Windows CRLF**：新建文件后先 `npm run format` 再跑 lint/test，避免 prettier 大量报错。
+- **文档滞后**：交付后须对 PLAN.md / PROGRESS.md / README.md 全量核对新面板与快捷键口径，不能只改单节就宣称已对齐。

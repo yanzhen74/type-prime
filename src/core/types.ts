@@ -238,6 +238,15 @@ export interface TrainingLevel {
   description: string;
 }
 
+/** 错误分析热力图的键帽信息（与训练面板缩略键盘布局结构一致，由面板注入） */
+export interface HeatmapKeyInfo {
+  label: string;
+  code: string;
+  finger: Finger;
+  hand: 'left' | 'right';
+  width?: number;
+}
+
 /** 练习模式 */
 export type PracticeMode = 'key-drill' | 'word' | 'article';
 

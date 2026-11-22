@@ -5,6 +5,7 @@
 ## 功能特性
 
 - **标准指法训练**：虚拟键盘显示，按键时高亮对应键位并提示应使用手指。
+- **错误分析**：键位错误热力图、易错词排行与最近练习概览，一键发起薄弱键位专项与易错词复习。
 - **单词掉落游戏**：单词从屏幕上方掉落，逐字符输入正确即可击落，支持自动锁定目标。
 - **多用户切换**：使用 localStorage 保存数据，默认提供 3 个用户，可添加新用户。
 - **基础排行榜**：按最高分排序展示所有用户。
@@ -20,7 +21,7 @@ type-prime/
 ├── style.css           # 样式（CSS 变量 + 三主题）
 ├── package.json        # 依赖与脚本
 ├── tsconfig.json       # TypeScript 配置
-├── vitest.config.ts    # 测试配置（vitest.setup.ts 过滤 jsdom 噪声）
+├── vitest.config.ts    # 测试配置（vitest.setup.ts 源头静音 jsdom canvas 噪声）
 ├── README.md           # 说明文档
 └── src/
     ├── main.ts         # 应用入口：面板路由、快捷键与模块协调
@@ -37,7 +38,9 @@ type-prime/
     │   ├── keyboard.ts     # DOM 虚拟键盘与指法提示
     │   ├── keyboard-anim.ts    # 缩略键盘动画状态机
     │   ├── train-engine.ts     # 分级练习引擎
-    │   ├── train-panel.ts      # 训练面板（键位/单词/文章/复习）
+    │   ├── train-panel.ts      # 训练面板（键位/单词/文章/复习/错误分析）
+    │   ├── error-stats.ts      # 错误统计聚合（热力/薄弱键/易错词）
+    │   ├── stats-view.ts       # 错误分析视图（热力键盘/易错词表）
     │   └── articles.ts       # 分级预装文章库
     ├── games/          # 指法游戏
     │   ├── game-engine.ts      # 游戏公共基类（循环/状态/输入）

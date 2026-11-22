@@ -24,9 +24,13 @@ import type { ReviewScheduler } from '../vocab/review.js';
 import { alpha, THEMES, type CanvasPalette } from '../render/theme.js';
 import { LayeredCanvas } from '../render/layered-canvas.js';
 import { KEY_ANIM, KeyboardAnimator, clamp01, easeOutCubic } from './keyboard-anim.js';
+import { TrainStatsView } from './stats-view.js';
 
 /** 单词练习每次取词数量 */
 const WORD_COUNT = 20;
+
+/** 薄弱键位专项的临时层级 id（错误分析推荐发起，不在 TRAINING_LEVELS 内） */
+const WEAK_LEVEL_ID = 'weak-keys';
 
 /** 单词练习词库选择偏好的 localStorage 键 */
 const WORD_PREF_KEY = 'typeprime_word_practice_pref';
@@ -820,6 +824,10 @@ export interface TrainPanelDeps {
   currentUser: () => string;
   /** 取色函数：缩略键盘绘制时实时读当前主题版面色，切主题不重建实例 */
   getPalette?: () => CanvasPalette;
+  /** 错误分析发起易错词复习（可选；main 经今日复习同一链路协调焦点与面板） */
+  onStartReview?: (wordIds: string[]) => void;
+  /** 错误分析发起薄弱键位专项（可选；main 负责恢复隐藏输入框后再进练习） */
+  onStartKeyDrill?: (keys: string[]) => void;
 }
 
 /**
@@ -876,6 +884,14 @@ export class TrainPanel {
   private phaseWrap!: HTMLElement;
   private phaseIndicator!: HTMLElement;
   private fingerHintEl!: HTMLElement;
+  private trainMainEl!: HTMLElement;
+  private statsViewEl!: HTMLElement;
+
+  // 错误分析视图（第四个子标签，非练习模式：展示期间练习区隐藏、输入门控）
+  private readonly statsView: TrainStatsView;
+  private statsActive = false;
+  /** 薄弱键位专项的临时层级（来自错误分析推荐）；切换层级/模式时清除 */
+  private overrideLevel: TrainingLevel | null = null;
 
   // 练习状态
   private mode: PracticeMode = 'key-drill';
@@ -916,6 +932,19 @@ export class TrainPanel {
     this.initLevelSelector();
     this.initArticleSelector();
     this.initWordSelector();
+    this.statsView = new TrainStatsView({
+      rows: MINI_ROWS,
+      progress: deps.progress,
+      vocabulary: deps.vocabulary,
+      onDrillKeys: (keys) => {
+        if (this.deps.onStartKeyDrill) {
+          this.deps.onStartKeyDrill(keys);
+        } else {
+          this.startWeakKeyDrill(keys);
+        }
+      },
+      onReviewWords: (ids) => this.deps.onStartReview?.(ids),
+    });
     this.updatePhaseIndicator();
     this.updateMotionButton();
     this.preparePreview();
@@ -928,9 +957,10 @@ export class TrainPanel {
     this.miniKeyboard.redraw();
   }
 
-  /** 面板可见性变更：隐藏时停掉键盘动画帧循环，避免与游戏渲染争抢帧预算 */
+  /** 面板可见性变更：隐藏时停掉键盘动画帧循环，避免与游戏渲染争抢帧预算；
+   * 错误分析视图展示期间缩略键盘不可见，同样停帧 */
   setPanelVisible(visible: boolean): void {
-    this.miniKeyboard.setVisible(visible);
+    this.miniKeyboard.setVisible(visible && !this.statsActive);
   }
 
   /** 切换键盘动画开关（按钮点击与 Ctrl+Shift+7 共用） */
@@ -953,6 +983,7 @@ export class TrainPanel {
     this.disposers.length = 0;
     this.miniKeyboard.dispose();
     this.miniHands.dispose();
+    this.statsView.dispose();
   }
 
   /** 同步动画开关按钮的文案与 aria-pressed（按钮缺失时静默跳过） */
@@ -970,7 +1001,8 @@ export class TrainPanel {
    * @param delta -1 表示上一层级，+1 表示下一层级，到边界时循环。
    */
   cycleLevel(delta: number): void {
-    if (this.mode !== 'key-drill') return;
+    if (this.mode !== 'key-drill' || this.statsActive) return;
+    this.overrideLevel = null;
     const count = TRAINING_LEVELS.length;
     this.levelIndex = (((this.levelIndex + delta) % count) + count) % count;
     this.levelSelector.value = TRAINING_LEVELS[this.levelIndex].id;
@@ -982,7 +1014,7 @@ export class TrainPanel {
    * @param delta -1 表示上一阶段，+1 表示下一阶段，到边界时循环。
    */
   cyclePhase(delta: number): void {
-    if (this.mode !== 'key-drill') return;
+    if (this.mode !== 'key-drill' || this.statsActive) return;
     const count = DRILL_PHASES.length;
     this.phaseIndex = (((this.phaseIndex + delta) % count) + count) % count;
     this.updatePhaseIndicator();
@@ -1001,6 +1033,9 @@ export class TrainPanel {
     if (words.length === 0) {
       return false;
     }
+    // 从错误分析发起复习时须退出统计视图；mode 已是 word 时不会走 switchMode，
+    // 故在此显式退出（exitStatsView 对非统计态幂等）
+    this.exitStatsView();
     if (this.mode !== 'word') {
       this.switchMode('word');
     }
@@ -1008,6 +1043,31 @@ export class TrainPanel {
     this.activeWordTexts = words.map((w) => w.text);
     this.pendingText = this.trainEngine.generateWordPractice(this.activeWordTexts);
     this.renderPreview(this.pendingText);
+    this.startPractice();
+    return true;
+  }
+
+  /**
+   * 从错误分析发起薄弱键位专项练习：以推荐键位构造临时层级，
+   * 复用键位练习的三阶段序列生成与层级高亮；切换层级/模式后自动失效。
+   * @returns 是否成功开始（键位列表为空时 false）
+   */
+  startWeakKeyDrill(keys: string[]): boolean {
+    const valid = keys.filter((k) => k.length === 1);
+    if (valid.length === 0) {
+      return false;
+    }
+    this.exitStatsView();
+    if (this.mode !== 'key-drill') {
+      this.switchMode('key-drill');
+    }
+    this.overrideLevel = {
+      id: WEAK_LEVEL_ID,
+      name: '薄弱键位专项',
+      keys: valid,
+      description: '来自错误分析的针对性练习',
+    };
+    this.resetPractice();
     this.startPractice();
     return true;
   }
@@ -1053,6 +1113,8 @@ export class TrainPanel {
     this.phaseWrap = requireEl<HTMLElement>('train-phase-select');
     this.phaseIndicator = requireEl<HTMLElement>('phase-indicator');
     this.fingerHintEl = requireEl<HTMLElement>('mini-finger-hint');
+    this.trainMainEl = requireEl<HTMLElement>('train-main');
+    this.statsViewEl = requireEl<HTMLElement>('train-stats-view');
     // 动画开关为可选控件：旧模板/测试 fixture 缺失时快捷键仍可用
     this.motionBtn = document.getElementById('train-motion-btn') as HTMLButtonElement | null;
     this.motionLabel = document.getElementById('train-motion-label');
@@ -1068,7 +1130,9 @@ export class TrainPanel {
         'click',
         () => {
           const mode = btn.getAttribute('data-train-tab');
-          if (mode === 'key-drill' || mode === 'word' || mode === 'article') {
+          if (mode === 'stats') {
+            this.enterStatsView();
+          } else if (mode === 'key-drill' || mode === 'word' || mode === 'article') {
             this.switchMode(mode);
           }
         },
@@ -1157,9 +1221,11 @@ export class TrainPanel {
   // -------------------------------------------------------------------------
 
   private switchMode(mode: PracticeMode): void {
+    this.exitStatsView();
     if (this.mode === mode) {
       return;
     }
+    this.overrideLevel = null;
     this.mode = mode;
     this.tabButtons.forEach((btn) => {
       btn.classList.toggle('active', btn.getAttribute('data-train-tab') === mode);
@@ -1171,7 +1237,77 @@ export class TrainPanel {
     this.resetPractice();
   }
 
+  // -------------------------------------------------------------------------
+  // 错误分析视图（第四个子标签）
+  // -------------------------------------------------------------------------
+
+  /** 进入错误分析：隐藏练习区、停键盘动画、刷新统计；练习引擎重置为 idle */
+  private enterStatsView(): void {
+    if (this.statsActive) {
+      return;
+    }
+    this.statsActive = true;
+    this.resetPractice();
+    this.tabButtons.forEach((btn) => {
+      btn.classList.toggle('active', btn.getAttribute('data-train-tab') === 'stats');
+    });
+    this.trainMainEl.style.display = 'none';
+    this.statsViewEl.style.display = '';
+    this.miniKeyboard.setVisible(false);
+  }
+
+  /** 退出错误分析：恢复练习区与当前模式的子标签高亮 */
+  private exitStatsView(): void {
+    if (!this.statsActive) {
+      return;
+    }
+    this.statsActive = false;
+    // 焦点若停在即将隐藏的统计控件上，主动 blur 触发 focusout 焦点保护释放，
+    // 避免隐藏输入框保持 disabled 导致后续练习无法捕获键盘
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && this.statsViewEl.contains(active)) {
+      active.blur();
+    }
+    this.statsViewEl.style.display = 'none';
+    this.trainMainEl.style.display = '';
+    this.tabButtons.forEach((btn) => {
+      btn.classList.toggle('active', btn.getAttribute('data-train-tab') === this.mode);
+    });
+    this.miniKeyboard.setVisible(this.isPanelActive());
+  }
+
+  private toggleStatsView(): void {
+    if (this.statsActive) {
+      this.exitStatsView();
+    } else {
+      this.enterStatsView();
+    }
+  }
+
+  /** 薄弱键位专项期间在下拉框中展示临时层级选项，清除后恢复常规层级选中态 */
+  private syncLevelSelectorForOverride(): void {
+    const existing = this.levelSelector.querySelector(`option[value="${WEAK_LEVEL_ID}"]`);
+    if (this.overrideLevel) {
+      if (!existing) {
+        const option = document.createElement('option');
+        option.value = WEAK_LEVEL_ID;
+        const keyLabel = this.overrideLevel.keys.map((k) => (k === ' ' ? '␣' : k)).join(' ');
+        option.textContent = `${this.overrideLevel.name}（${keyLabel}）`;
+        this.levelSelector.appendChild(option);
+      }
+      this.levelSelector.value = WEAK_LEVEL_ID;
+    } else {
+      existing?.remove();
+      this.levelSelector.value = this.currentLevel().id;
+    }
+  }
+
   private handleLevelChange(): void {
+    // 选中薄弱键位专项本身：保持临时层级，不做常规层级切换
+    if (this.levelSelector.value === WEAK_LEVEL_ID) {
+      return;
+    }
+    this.overrideLevel = null;
     const index = TRAINING_LEVELS.findIndex((l) => l.id === this.levelSelector.value);
     if (index < 0) {
       return;
@@ -1350,10 +1486,11 @@ export class TrainPanel {
     this.activeWordTexts = [];
     switch (this.mode) {
       case 'key-drill': {
-        const level = this.currentLevel();
+        const level = this.overrideLevel ?? this.currentLevel();
         const phase: DrillPhase = DRILL_PHASES[this.phaseIndex].id;
         this.pendingText = this.trainEngine.generateKeyDrill(level, phase);
         this.applyLayerHighlight(level);
+        this.syncLevelSelectorForOverride();
         break;
       }
       case 'word': {
@@ -1443,6 +1580,10 @@ export class TrainPanel {
     this.updateStatusBadge('idle');
     this.hideCursor();
     this.preparePreview();
+    // 错误分析展示期间被重置（如切换用户）：同步刷新统计，避免展示上一位用户的数据
+    if (this.statsActive) {
+      this.statsView.refresh();
+    }
   }
 
   private handleNext(): void {
@@ -1476,6 +1617,11 @@ export class TrainPanel {
 
   private handleTypingEvent(event: TypingEvent): void {
     if (!this.isPanelActive()) {
+      return;
+    }
+
+    // 错误分析视图展示期间不向练习引擎转发任何输入（含 Enter/Esc）
+    if (this.statsActive) {
       return;
     }
 
@@ -1554,6 +1700,12 @@ export class TrainPanel {
         this.switchMode(mode);
         return;
       }
+      // Ctrl+Shift+4 切换错误分析视图（用 e.code 避开 Shift 改变 e.key 的布局差异）
+      if (e.code === 'Digit4') {
+        e.preventDefault();
+        this.toggleStatsView();
+        return;
+      }
       // Ctrl+Shift+7 切换键盘动画（用 e.code 避开 Shift 改变 e.key 的布局差异）
       if (e.code === 'Digit7') {
         e.preventDefault();
@@ -1562,8 +1714,8 @@ export class TrainPanel {
       }
     }
 
-    // Ctrl+←/→ 切换练习阶段
-    if (e.ctrlKey && !e.shiftKey && !e.altKey) {
+    // Ctrl+←/→ 切换练习阶段（错误分析展示期间不响应）
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && !this.statsActive) {
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
         this.cyclePhase(-1);
@@ -1576,8 +1728,8 @@ export class TrainPanel {
       }
     }
 
-    // Tab 在 idle 状态开始练习（练习进行中不拦截）
-    if (e.key === 'Tab' && !e.altKey && !e.ctrlKey && this.isPracticeIdle()) {
+    // Tab 在 idle 状态开始练习（练习进行中与错误分析展示期间不拦截）
+    if (e.key === 'Tab' && !e.altKey && !e.ctrlKey && !this.statsActive && this.isPracticeIdle()) {
       e.preventDefault();
       this.startPractice();
     }
@@ -1626,6 +1778,17 @@ export class TrainPanel {
       const key = mistakeKeyOf(error.expected);
       if (key) {
         this.deps.progress.recordKeyResult(key, false);
+      }
+    }
+
+    // 正确击键同步累计（错误分析的错误率分母）：按最终比对结果记录，
+    // 退格修正后判对的键计为正确；自动消耗的换行不计入击键统计
+    for (const r of this.trainEngine.getCharResults()) {
+      if (r.correct === true && r.expected !== '\n') {
+        const key = mistakeKeyOf(r.expected);
+        if (key) {
+          this.deps.progress.recordKeyResult(key, true);
+        }
       }
     }
 

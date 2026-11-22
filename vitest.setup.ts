@@ -1,11 +1,7 @@
-// jsdom 不实现 canvas 绘制：getContext 的 not-implemented 属环境噪声而非缺陷，
-// 在 worker 内过滤这类 jsdomError 转发，保留其余控制台输出（VirtualConsole
-// 实例含函数，无法经 environmentOptions 序列化进 forks worker，故放 setup）。
-const realError = console.error.bind(console);
-console.error = (...args: unknown[]): void => {
-  const first = args[0];
-  if (typeof first === 'string' && first.includes('Not implemented:')) {
-    return;
-  }
-  realError(...args);
-};
+// jsdom 不实现 canvas 绘制：getContext 的 not-implemented 属环境噪声而非缺陷。
+// Vitest 的 console 拦截在 worker 初始化时捕获原始 console，会绕过 setup 里的
+// console.error 覆写，故在源头静音：原型级 getContext 直接返回 null（与 jsdom
+// 未安装 canvas 包时的返回值一致，降级路径语义不变）。测试在实例级覆写的
+// 录制 ctx（mountKeyboardCanvas / createElement spy）不受原型补丁影响。
+HTMLCanvasElement.prototype.getContext = (() =>
+  null) as unknown as typeof HTMLCanvasElement.prototype.getContext;

@@ -18,41 +18,56 @@ function mountFixture(): void {
         <button class="train-tab-btn active" data-train-tab="key-drill"></button>
         <button class="train-tab-btn" data-train-tab="word"></button>
         <button class="train-tab-btn" data-train-tab="article"></button>
+        <button class="train-tab-btn" data-train-tab="stats"></button>
       </div>
-      <div id="train-level-select"><select id="level-selector"></select></div>
-      <div id="train-phase-select"><span id="phase-indicator"></span></div>
-      <div id="train-word-select" style="display:none">
-        <div id="word-category-list"></div>
-        <select id="word-difficulty-select">
-          <option value="all"></option>
-          <option value="easy"></option>
-          <option value="medium"></option>
-          <option value="hard"></option>
-        </select>
+      <div id="train-main">
+        <div id="train-level-select"><select id="level-selector"></select></div>
+        <div id="train-phase-select"><span id="phase-indicator"></span></div>
+        <div id="train-word-select" style="display:none">
+          <div id="word-category-list"></div>
+          <select id="word-difficulty-select">
+            <option value="all"></option>
+            <option value="easy"></option>
+            <option value="medium"></option>
+            <option value="hard"></option>
+          </select>
+        </div>
+        <div id="train-article-input" style="display:none">
+          <textarea id="article-textarea"></textarea>
+          <button id="article-load-btn"></button>
+          <select id="article-select"></select>
+          <button id="article-random-btn"></button>
+          <button id="article-seq-btn"></button>
+        </div>
+        <span id="train-status-badge"></span>
+        <div id="text-target"></div>
+        <div id="text-input"></div>
+        <span id="stat-wpm"></span><span id="stat-cpm"></span>
+        <span id="stat-accuracy"></span><span id="stat-progress"></span>
+        <button id="train-start-btn"></button>
+        <button id="train-reset-btn"></button>
+        <button id="train-next-btn" style="display:none"></button>
+        <div class="keyboard-ref-bar">
+          <span class="keyboard-ref-title">键盘参考</span>
+          <button id="train-motion-btn" class="btn keyboard-motion-btn" aria-pressed="true">
+            <span id="train-motion-label">动画：开</span>
+          </button>
+        </div>
+        <div id="mini-hands-diagram"></div>
+        <div id="mini-finger-hint"></div>
       </div>
-      <div id="train-article-input" style="display:none">
-        <textarea id="article-textarea"></textarea>
-        <button id="article-load-btn"></button>
-        <select id="article-select"></select>
-        <button id="article-random-btn"></button>
-        <button id="article-seq-btn"></button>
+      <div id="train-stats-view" style="display:none">
+        <div id="stats-empty-banner" style="display:none"></div>
+        <div id="stats-summary"></div>
+        <div id="heatmap-keyboard"></div>
+        <button id="stats-drill-weak-btn" disabled></button>
+        <span id="stats-weak-summary"></span>
+        <div id="stats-words-table-wrap"><table><tbody id="stats-words-body"></tbody></table></div>
+        <div id="stats-words-empty" style="display:none"></div>
+        <button id="stats-review-words-btn" disabled></button>
+        <div id="stats-sessions"></div>
+        <div id="stats-sessions-empty" style="display:none"></div>
       </div>
-      <span id="train-status-badge"></span>
-      <div id="text-target"></div>
-      <div id="text-input"></div>
-      <span id="stat-wpm"></span><span id="stat-cpm"></span>
-      <span id="stat-accuracy"></span><span id="stat-progress"></span>
-      <button id="train-start-btn"></button>
-      <button id="train-reset-btn"></button>
-      <button id="train-next-btn" style="display:none"></button>
-      <div class="keyboard-ref-bar">
-        <span class="keyboard-ref-title">键盘参考</span>
-        <button id="train-motion-btn" class="btn keyboard-motion-btn" aria-pressed="true">
-          <span id="train-motion-label">动画：开</span>
-        </button>
-      </div>
-      <div id="mini-hands-diagram"></div>
-      <div id="mini-finger-hint"></div>
       <div id="train-result-modal" style="display:none">
         <h3></h3>
         <div id="result-stats"></div>
@@ -142,6 +157,9 @@ function makeProgressStub(): UserProgress {
     recordSession: () => {},
     recordKeyResult: () => {},
     recordWordResult: () => {},
+    getKeyStats: () => ({}),
+    getWordStats: () => ({}),
+    getCurrentUser: () => undefined,
   } as unknown as UserProgress;
 }
 
@@ -873,5 +891,153 @@ describe('TrainPanel 键盘动画', () => {
     expect(
       leftHand().querySelector('.mini-finger--pinky')?.classList.contains('mini-finger--tap')
     ).toBe(true);
+  });
+});
+
+describe('TrainPanel 错误分析视图接线', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mountFixture();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  function mountStatsPanel(progressOverride?: Partial<UserProgress>): {
+    feed: (event: TypingEvent) => void;
+    panel: TrainPanel;
+  } {
+    let callback: ((e: TypingEvent) => void) | null = null;
+    const typingStub = {
+      on: (cb: (e: TypingEvent) => void) => {
+        callback = cb;
+        return () => {};
+      },
+      focus: () => {},
+    } as unknown as TypingEngine;
+    const panel = new TrainPanel({
+      typingEngine: typingStub,
+      keyboard: null,
+      vocabulary: makeVocabStub(),
+      progress: { ...makeProgressStub(), ...progressOverride } as UserProgress,
+      currentUser: () => 'Tester',
+    });
+    return { feed: (event) => callback?.(event), panel };
+  }
+
+  const statsTab = (): HTMLElement =>
+    document.querySelector('[data-train-tab="stats"]') as HTMLElement;
+  const keyTab = (): HTMLElement =>
+    document.querySelector('[data-train-tab="key-drill"]') as HTMLElement;
+  const badge = (): HTMLElement => document.getElementById('train-status-badge') as HTMLElement;
+
+  it('点击错误分析子标签隐藏练习区并展示统计视图，切回键位练习恢复', () => {
+    mountStatsPanel();
+    statsTab().click();
+    expect(document.getElementById('train-main')!.style.display).toBe('none');
+    expect(document.getElementById('train-stats-view')!.style.display).toBe('');
+    expect(statsTab().classList.contains('active')).toBe(true);
+    // 热力图键帽由注入的缩略键盘布局构建（48 键）
+    expect(document.querySelectorAll('.heat-key').length).toBeGreaterThan(40);
+
+    keyTab().click();
+    expect(document.getElementById('train-main')!.style.display).toBe('');
+    expect(document.getElementById('train-stats-view')!.style.display).toBe('none');
+    expect(keyTab().classList.contains('active')).toBe(true);
+  });
+
+  it('Ctrl+Shift+4（e.code Digit4）往返切换错误分析视图', () => {
+    mountStatsPanel();
+    const press = (): void => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: '$',
+          code: 'Digit4',
+          ctrlKey: true,
+          shiftKey: true,
+          bubbles: true,
+        })
+      );
+    };
+    press();
+    expect(document.getElementById('train-stats-view')!.style.display).toBe('');
+    press();
+    expect(document.getElementById('train-stats-view')!.style.display).toBe('none');
+  });
+
+  it('错误分析展示期间输入门控：Enter/字符不启动练习，Ctrl+↑ 不切层级', () => {
+    const { feed, panel } = mountStatsPanel();
+    statsTab().click();
+    const levelBefore = (document.getElementById('level-selector') as HTMLSelectElement).value;
+    feed({ type: 'submit' });
+    feed(char('a'));
+    expect(badge().classList.contains('idle')).toBe(true);
+    panel.cycleLevel(1);
+    expect((document.getElementById('level-selector') as HTMLSelectElement).value).toBe(
+      levelBefore
+    );
+  });
+
+  it('startWeakKeyDrill 生成仅含推荐键的序列并直接开始练习，下拉框展示专项选项', () => {
+    const { panel } = mountStatsPanel();
+    expect(panel.startWeakKeyDrill(['a', 's'])).toBe(true);
+    expect(badge().classList.contains('active')).toBe(true);
+    const selector = document.getElementById('level-selector') as HTMLSelectElement;
+    expect(selector.value).toBe('weak-keys');
+    expect(selector.querySelector('option[value="weak-keys"]')!.textContent).toContain(
+      '薄弱键位专项'
+    );
+    const chars = [...document.querySelectorAll('#text-target .char')].map((el) => el.textContent);
+    expect(chars.length).toBeGreaterThan(0);
+    for (const c of chars) {
+      expect(['a', 's', ' ', '\u00a0']).toContain(c);
+    }
+    // 空键位列表拒绝发起
+    expect(panel.startWeakKeyDrill([])).toBe(false);
+  });
+
+  it('专项期间选择常规层级后清除临时层级与下拉选项', () => {
+    const { panel } = mountStatsPanel();
+    panel.startWeakKeyDrill(['a']);
+    const selector = document.getElementById('level-selector') as HTMLSelectElement;
+    selector.value = 'top-row';
+    selector.dispatchEvent(new Event('change'));
+    expect(selector.querySelector('option[value="weak-keys"]')).toBeNull();
+    expect(selector.value).toBe('top-row');
+  });
+
+  it('startReview 从错误分析发起复习时退出统计视图（mode 已是 word 亦生效）', () => {
+    const { panel } = mountStatsPanel();
+    // 先处于单词模式再进错误分析，覆盖不走 switchMode 的分支
+    (document.querySelector('[data-train-tab="word"]') as HTMLElement).click();
+    statsTab().click();
+    expect(document.getElementById('train-stats-view')!.style.display).toBe('');
+    expect(panel.startReview(['w1'])).toBe(true);
+    expect(document.getElementById('train-stats-view')!.style.display).toBe('none');
+    expect(document.getElementById('train-main')!.style.display).toBe('');
+    expect(badge().classList.contains('active')).toBe(true);
+    expect(document.getElementById('text-target')!.textContent).toContain('ab');
+  });
+
+  it('练习完成时同步累计正确击键（错误率分母），换行不计入', () => {
+    const recordKeyResult = vi.fn();
+    const { feed } = mountStatsPanel({ recordKeyResult });
+    keyTab().click();
+    // 切到单词模式：词库桩返回 ab / cd，目标文本 "ab cd"
+    (document.querySelector('[data-train-tab="word"]') as HTMLElement).click();
+    (document.getElementById('train-start-btn') as HTMLElement).click();
+    feed(char('a'));
+    feed(char('b'));
+    feed(char(' '));
+    feed(char('c'));
+    feed(char('d'));
+    expect(recordKeyResult).toHaveBeenCalledWith('KeyA', true);
+    expect(recordKeyResult).toHaveBeenCalledWith('KeyB', true);
+    expect(recordKeyResult).toHaveBeenCalledWith('Space', true);
+    expect(recordKeyResult).toHaveBeenCalledWith('KeyC', true);
+    expect(recordKeyResult).toHaveBeenCalledWith('KeyD', true);
+    // 全对练习不产生错误记录
+    expect(recordKeyResult.mock.calls.some(([, ok]) => ok === false)).toBe(false);
   });
 });

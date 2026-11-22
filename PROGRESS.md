@@ -158,7 +158,7 @@
    - ✅ 粒子系统 `src/render/particle-system.ts`：轻量粒子池 + 纯 Canvas 2D 绘制（零资源零依赖），预设表 `PARTICLE_PRESETS` 覆盖 hit/kill/destroy/splat/hurt/heal/levelup/boss 八类事件，四种形状（dot/spark/smoke/ring）；粒子只按注入 dt 推进（单帧步长上限 50ms、池上限 400、寿命淡出），不进 state 以免污染 onUpdate；三个模式在击杀/击毁/命中/破甲/落地/触底/升关/BOSS 登场处发射，装饰性 emoji 飘字（💥/✦/💨/🥀）已由粒子取代，带信息量的文案飘字（🔧/❄/+50/✗错字符）保留；基类新增 `onReset()` 钩子负责 reset 清池。测试基线 15 文件 193 用例全绿（含 particle-system.test.ts 23 例）；浏览器用「全项目仅粒子系统写 ctx.globalAlpha」做写入计数探针，实测三模式粒子渲染、装饰 emoji 归零、控制台零报错。详见 PLAN.md §10.4.2。
    - ✅ 主题切换 `src/render/theme.ts`：三主题（深空夜 night 默认 / 纸墨白 paper / 磷光绿 phosphor），顶栏「主题」下拉 + 全局 `Ctrl+Shift+6` 循环；双源配色各自单一来源（DOM 走 style.css 的 html[data-theme] 变量块，Canvas 走 THEMES[name].canvas 的 17 个 token），世界色（僵尸/植物/炮弹/粒子/手指/BOSS/冻结）不随主题变；`GameEngineOptions.getPalette` 注入活取色函数 + 基类/TrainPanel `redraw()`，切主题不重建实例不打断当前局；存储键 `typeprime_theme`，index.html 内联脚本首屏防闪烁；主题下拉做训练/游戏双套焦点保护。顺手修复强调色按钮内 kbd 对比不足与窄视口层级提示被挤压。测试基线 16 文件 218 用例全绿（theme.test.ts 22 例 + train-panel 补 3 例）；浏览器实测三主题 DOM/Canvas 逐色核对、三模式可玩、快捷键循环、刷新持久化、控制台零报错。详见 PLAN.md §10.4.3。
    - ✅ 键盘动画 `src/train/keyboard-anim.ts`：`KeyboardAnimator` 纯数值状态机（press 下压回弹 / error 横向抖动 / hint 呼吸 / layer 逐键渐入 / ripple 涟漪 + idle 呼吸）与 `MiniKeyboardCanvas` 绘制分离，只按注入时间戳推进（首帧 dt 哨兵、单帧步长上限 50ms），`active` 为假时 rAF 自然停；键座/键帽双层绘制，实色底字色切 onAccent 保三主题可读；切面板/完成/destroy 起停不叠循环；系统 prefers-reduced-motion 与用户开关共用 reduced 降级通道，DOM 手指图示同步 `.mini-hands--static`；「动画：开/关」按钮 + `Ctrl+Shift+7`，持久化 `typeprime_train_settings.motion`。顺手修复完成态回退再输入的 insertBefore 崩溃与文章加载残留提示文案两个既有缺陷。测试基线 17 文件 282 用例全绿（keyboard-anim 47 + 训练面板动画 15 + 回归 2）；浏览器 no-store 服务器实测按下/错键/hint 帧视觉、切面板绘制数 0/恢复、开关与持久化、控制台零报错。详见 PLAN.md §10.4.4。
-   - ✅ Canvas 分层渲染 `src/render/layered-canvas.ts` + src 目录模块化重构：单主画布 + 离屏静态缓存（非多 canvas DOM 堆叠），`beginFrame(key, paintStatic)` 以版面色对象引用为指纹，invalidate/指纹/尺寸三要素失效，离屏不可用时降级直绘；`GameEngine` 新增 `layers` 与 `beginFrame()`，三个游戏拆出 `drawBackground`（网格/基地线入静态层），实体→粒子→遮罩/HUD 有序动态 passes；缩略键盘板面/键座入静态缓存，呼吸帧只 blit。同期把 src 平铺文件按模块 git mv 进 core/render/train/games/vocab 子目录（测试同目录并存，assets 归 vocab），全量 import 修正，配置全 glob 无需改动（结构详见 PLAN.md §7）。测试基线 18 文件 293 用例全绿（layered-canvas 9 + train-panel 分层 2）；jsdom 噪声改由 vitest.setup.ts 在 worker 内过滤（VirtualConsole 无法序列化进 forks worker）；浏览器 no-store 实测游戏每帧 drawImage 1 次、stroke 40+/帧→1–3/帧、三模式可玩、三主题即时重绘、切面板停/恢复、控制台零报错。详见 PLAN.md §10.4.5。
+   - ✅ Canvas 分层渲染 `src/render/layered-canvas.ts` + src 目录模块化重构：单主画布 + 离屏静态缓存（非多 canvas DOM 堆叠），`beginFrame(key, paintStatic)` 以版面色对象引用为指纹，invalidate/指纹/尺寸三要素失效，离屏不可用时降级直绘；`GameEngine` 新增 `layers` 与 `beginFrame()`，三个游戏拆出 `drawBackground`（网格/基地线入静态层），实体→粒子→遮罩/HUD 有序动态 passes；缩略键盘板面/键座入静态缓存，呼吸帧只 blit。同期把 src 平铺文件按模块 git mv 进 core/render/train/games/vocab 子目录（测试同目录并存，assets 归 vocab），全量 import 修正，配置全 glob 无需改动（结构详见 PLAN.md §7）。测试基线 18 文件 293 用例全绿（layered-canvas 9 + train-panel 分层 2）；jsdom 噪声改由 vitest.setup.ts 在 worker 内过滤（VirtualConsole 无法序列化进 forks worker；错误分析批次后改为原型级 getContext 返回 null 的源头静音，见任务 10）；浏览器 no-store 实测游戏每帧 drawImage 1 次、stroke 40+/帧→1–3/帧、三模式可玩、三主题即时重绘、切面板停/恢复、控制台零报错。详见 PLAN.md §10.4.5。
    - ⬜ WebGL/PixiJS 评估。
 6. ✅ 测试：游戏引擎状态机、输入匹配、关卡 / 波次与结算测试（随任务 1–4、8、9 逐步补齐，已核对覆盖面）：
    - 状态机：`src/games/game-engine.test.ts` —— start 倒计时与输入门控、pause/resume、reset、attachInput 路由、gameOver 回调、`lengthSpeedFactor` 边界、基类 `expectedChar` 默认值。
@@ -167,11 +167,32 @@
 7. ✅ 游戏面板设置全键盘化：`Ctrl+Shift+1/2/3` 切换模式、`Ctrl+↑/↓` 起始等级(1–10循环)、`Ctrl+←/→` 速度倍率(0.5/0.75/1/1.5/2循环)、`Ctrl+Shift+4` 切换词源(仅单词掉落，其余模式为提示型 no-op)；仅游戏面板激活生效，走 handleGameSettingChange 重建实例，触发后在设置行闪现当前值 1.5s 并同步 kbd 标注/F1 帮助弹窗/底部提示栏。模式与词源用 `e.code` 判定避开 Shift 布局差异。已经浏览器实测全部生效且与训练面板同名快捷键互不干扰。详细设计见 PLAN.md §10.6。
 8. ✅ 僵尸大战打击反馈增强：全僵尸头部血条(按层显示、逐字符平滑掉光) + 坦克三段变色(满蓝打光→满黄→满红) + 基地植物炮台(每正确字符发射种子炮弹，命中白闪/顿挫/火花) + 打错字符发射 missed 灰哑弹(跳弹零伤害/落地 splat/✗错字符飘字) + 预留音效钩子。详细设计见 PLAN.md §10.7。
 9. ✅ 含空格文本输入与长文本难度治理：空格不再被拦截，当锁定目标的下一期望字符是空格时作为真实字符输入（否则仍为提交）；长句按 `lengthSpeedFactor` 减速，三个游戏模式统一生效；僵尸 BOSS 另下调为 3 轮输入且基础速度取原值 3/4。详见 PLAN.md §10.8。
+10. ✅ 错误分析视图（热力图 + 易错词 + 推荐练习）：训练面板第四个子标签 `Ctrl+Shift+4`。`src/train/error-stats.ts` 纯函数聚合（错误率 50% 满档热力 + 低样本阻尼、薄弱键 Top6、易错词 Top10）+ `src/train/stats-view.ts` 视图控制器（48 键 DOM 热力键盘、方向键漫游、概览 chips、易错词表、最近练习）；练习完成时补记正确击键修复错误率分母（历史 keyStats 只记错误）；键帽/薄弱按钮 → 临时层级薄弱键位专项，易错词行/批量 → SM-2 复习闭环；修复 startReview 在 mode 已是 word 时不退出统计视图的回归（浏览器实测发现，已补单测）。jsdom 噪声改为原型级 getContext 返回 null 的源头静音（Vitest console 拦截会绕过 setup 覆写）。测试基线 20 文件 326 用例全绿（error-stats 13 + stats-view 10 + 接线 7），`build:release` 205.5 KB；浏览器 no-store 实测热力/专项/易错词/复习全闭环、三主题换肤、响应式，控制台零报错。详见 PLAN.md §10 块一·错误分析视图。
 
 ---
 
 ## 7. 当前阻塞与注意事项
 
 - 无阻塞项。
-- 内置词库目前仅 `daily` / `programming` 两组默认词库；PLAN.md 第 11 节规划的中小学、四六级等词库 JSON 尚未落地，后续按版权合规要求补充。
+- 内置词库已预装 `daily` / `programming` / `frequency` / `cet4` / `cet6` 五类（DATA_VERSION=2 按 id 迁移补齐）；PLAN.md 第 11 节规划的中小学课文词库尚未落地，后续按版权合规要求补充。
 - 细部 UI/交互（配色、动画时长、音效）仍可据用户反馈微调。
+
+---
+
+## 8. 扩展游戏需求与决策记录
+
+### 8.1 候选评估结果
+
+- **舒尔特专注力训练（放弃）**：用户最初设想在数字格子里放入不同单词、用户依次输入对应单词。评估后用户自行否决，理由：与本项目主线无关，盲打训练与现有「文章练习」没有实质区别，只是排版形态变化。备注：经典舒尔特的训练机制依赖「注视点固定在格子中心 + 余光扫视搜索 + 瞬时指认」，而输入全词需视线离开中心（看键盘或看手区），本质变成串行双任务，已偏离舒尔特本来意图。
+- **坦克大战（保留，待实现）**：与既有三种模式区分度高——敌方坦克会向玩家开火、**我方炮弹可与敌方炮弹在飞行途中对消**、玩家有**护盾**（敌炮弹先扣护盾、破盾后才扣生命）。压力源从「目标掉到底部」变为「玩家自身被瞄准」。
+
+### 8.2 已定设计口径
+
+- 坦克移动**不引入手动方向键，且玩家坦克静止不动**（字母键全归 `TypingEngine`，WASD 与打字互斥；快捷键命名空间已拥挤）：玩家坦克固定在底部中央，炮塔自动转向锁定目标，玩家全部交互只有打字。舍弃自动巡航的理由：炮塔已自动瞄准时巡航不产生决策价值，只是装饰，还会让敌炮弹命中判定变随机、让玩家误判为 bug；静止后**对消成为玩家唯一的主动防御手段**。
+- 静止带来的几何红利：我方炮弹（玩家→敌坦克）与敌炮弹（敌坦克→玩家）天然共线相向，打「刚开火的那辆」即可迎头对消，打其他坦克则拦不住——这就是本模式的决策层。
+- 单词内容源**已定为内置分档词表**（新建 `TANK_CONTENT`，沿用 `SHOOTER_CONTENT` 的 letter/combo/simple/complex/phrase/boss 分档），**不接 VocabularyBank 词库词源**；词源类控件在扩展面板不出现。
+- 新增**顶级面板 `extra`（「扩展游戏」）**，位于排行榜之后，快捷键 **Ctrl+5**；面板内部用下拉 `#extra-game-mode` + `Ctrl+Shift+1` 选择具体游戏，为后续扩展游戏预留位置。
+- 扩展面板使用**独立隐藏输入框 `#extra-game-input` 与独立实例字段 `extraGame`**，不复用游戏面板的 `#game-input` / `game` / `createGame`，避免两个面板的模式切换互相触发重建；`switchTab` 需扩成训练/游戏/扩展三方焦点互斥。
+- 关卡难度沿用**关卡目标制**（非无尽升级），起始 3 命、升关回补 1 命、通关 10 关判定胜利；护盾上限 3，连续对消 N 发（初始 3）或击毁敌坦克掉落回补 1 层。
+
+详细玩法规格、类型与模块清单、实施步骤与风险控制已留底于 **PLAN.md 第 14 节**。当前状态：方案已定，**尚未开始编码**。

@@ -15,7 +15,7 @@
         /* 存储不可用时保留默认深空夜 */
       }
     </script>
-    <link rel="stylesheet" href="style.css?v=8" />
+    <link rel="stylesheet" href="style.css?v=9" />
   </head>
   <body>
     <div id="app">
@@ -59,11 +59,14 @@
               <button class="train-tab-btn" data-train-tab="article">
                 文章练习 <kbd>Ctrl+Shift+3</kbd>
               </button>
+              <button class="train-tab-btn" data-train-tab="stats">
+                错误分析 <kbd>Ctrl+Shift+4</kbd>
+              </button>
             </div>
           </div>
 
-          <!-- 主区域 -->
-          <div class="train-main">
+          <!-- 主区域（练习区；错误分析视图展示时整体隐藏） -->
+          <div class="train-main" id="train-main">
             <!-- 左侧/中间内容区 -->
             <div class="train-content">
               <!-- 层级选择（仅键位练习时显示） -->
@@ -187,6 +190,80 @@
               <div class="mini-hands-diagram" id="mini-hands-diagram"></div>
               <div class="mini-finger-hint" id="mini-finger-hint"></div>
             </div>
+          </div>
+
+          <!-- 错误分析视图（第四个子标签：热力图 + 易错词 + 最近练习，内容由 JS 填充） -->
+          <div class="train-stats-view" id="train-stats-view" style="display: none">
+            <div class="stats-empty-banner" id="stats-empty-banner" style="display: none">
+              还没有练习数据。完成任意键位 / 单词 /
+              文章练习后，这里会汇总你的薄弱键位与易错词，并给出针对性复习推荐。
+            </div>
+            <div class="stats-summary" id="stats-summary"></div>
+            <div class="stats-grid">
+              <section class="stats-card">
+                <div class="stats-card-head">
+                  <h3>错误键位热力图</h3>
+                  <div class="heat-legend">
+                    <span class="heat-legend-item"><i class="heat-swatch is-solid"></i>已练熟</span>
+                    <span class="heat-legend-item"><i class="heat-swatch is-low"></i>错误少</span>
+                    <span class="heat-legend-bar" aria-hidden="true"></span>
+                    <span class="heat-legend-item"><i class="heat-swatch is-high"></i>错误多</span>
+                  </div>
+                </div>
+                <div class="heatmap-keyboard" id="heatmap-keyboard"></div>
+                <p class="stats-hint">
+                  颜色越红错误率越高（击键样本不足 5
+                  次时热力按比例减弱）；点击键帽开始该键专项练习，方向键可在键帽间移动。
+                </p>
+                <div class="stats-actions">
+                  <button id="stats-drill-weak-btn" class="btn btn-accent" disabled>
+                    练习薄弱键位
+                  </button>
+                  <span class="stats-hint" id="stats-weak-summary"></span>
+                </div>
+              </section>
+              <section class="stats-card">
+                <div class="stats-card-head">
+                  <h3>易错词列表</h3>
+                  <span class="stats-hint">按错误次数排序 · Top 10</span>
+                </div>
+                <div class="stats-table-wrap" id="stats-words-table-wrap">
+                  <table class="stats-table">
+                    <thead>
+                      <tr>
+                        <th>单词</th>
+                        <th>释义</th>
+                        <th>错误</th>
+                        <th>练习</th>
+                        <th>错误率</th>
+                        <th>掌握度</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="stats-words-body"></tbody>
+                  </table>
+                </div>
+                <div class="stats-empty" id="stats-words-empty" style="display: none">
+                  暂无易错词记录。单词 / 复习练习完成后，错词会自动汇总到这里。
+                </div>
+                <div class="stats-actions">
+                  <button id="stats-review-words-btn" class="btn btn-accent" disabled>
+                    复习全部易错词
+                  </button>
+                  <span class="stats-hint">复习会同步更新掌握度与记忆曲线复习间隔</span>
+                </div>
+              </section>
+            </div>
+            <section class="stats-card">
+              <div class="stats-card-head">
+                <h3>最近练习</h3>
+                <span class="stats-hint">最近 8 次</span>
+              </div>
+              <div class="stats-sessions" id="stats-sessions"></div>
+              <div class="stats-empty" id="stats-sessions-empty" style="display: none">
+                还没有练习记录。
+              </div>
+            </section>
           </div>
 
           <!-- 隐藏输入框（捕获键盘输入） -->
@@ -412,6 +489,10 @@
                   <td>切换键位/单词/文章练习（训练面板）</td>
                 </tr>
                 <tr>
+                  <td><kbd>Ctrl+Shift+4</kbd></td>
+                  <td>错误分析：热力图 / 易错词 / 薄弱键位推荐（训练面板）</td>
+                </tr>
+                <tr>
                   <td><kbd>Ctrl+↑↓</kbd></td>
                   <td>切换练习层级（训练面板）</td>
                 </tr>
@@ -492,6 +573,6 @@
       </footer>
     </div>
 
-    <script type="module" src="dist/main.js?v=8"></script>
+    <script type="module" src="dist/main.js?v=9"></script>
   </body>
 </html>
